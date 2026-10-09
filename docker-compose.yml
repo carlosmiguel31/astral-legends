@@ -1,0 +1,45 @@
+# Infraestrutura de desenvolvimento: Postgres e Redis.
+# A API e o web rodam no host (pnpm dev) para hot reload rápido no Windows e no Linux.
+#
+#   pnpm db:up     → sobe os serviços
+#   pnpm db:down   → para os serviços (os dados ficam nos volumes)
+#
+# Portas publicadas apenas em 127.0.0.1: nada fica exposto na rede local.
+name: astral-legends
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: astral
+      POSTGRES_PASSWORD: astral_dev
+      POSTGRES_DB: astral_dev
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U astral -d astral_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # noeviction: filas e locks nunca podem ser descartados silenciosamente.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
+  redisdata:

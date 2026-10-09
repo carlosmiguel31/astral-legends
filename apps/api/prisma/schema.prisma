@@ -1,0 +1,283 @@
+// Modelo de dados preliminar do Astral Legends.
+// Convenções:
+// - Tabelas e colunas em snake_case (@@map/@map); modelos em PascalCase.
+// - Valores monetários e de recursos são BigInt (nunca ponto flutuante).
+// - Enums de gameplay usam os mesmos ids de @astral/game-core.
+// - Restrições que o Prisma não modela (CHECK, triggers de append-only) ficam
+//   no SQL da migração; veja docs/DATA_MODEL.md.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Contas e sessões ─────────────────────────────
+
+enum AccountRole {
+  PLAYER
+  MODERATOR
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+model Account {
+  id           String        @id @default(uuid(7)) @db.Uuid
+  /// E-mail normalizado (minúsculas, sem espaços).
+  email        String        @unique @db.VarChar(254)
+  passwordHash String        @map("password_hash") @db.VarChar(255)
+  role         AccountRole   @default(PLAYER)
+  status       AccountStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions      AuthSession[]
+  characters    Character[]
+  balances      WalletBalance[]
+  ledgerEntries LedgerEntry[]
+
+  @@map("accounts")
+}
+
+model AuthSession {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  accountId        String    @map("account_id") @db.Uuid
+  /// Hash SHA-256 do refresh token; o token em claro nunca é persistido.
+  refreshTokenHash String    @unique @map("refresh_token_hash") @db.VarChar(128)
+  userAgent        String?   @map("user_agent") @db.VarChar(512)
+  ip               String?   @db.VarChar(64)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("auth_sessions")
+}
+
+// ───────────────────────────── Personagens ─────────────────────────────
+
+enum CharacterClass {
+  guardian
+  arcanist
+  blade
+}
+
+enum Affinity {
+  solar
+  lunar
+  storm
+  abyssal
+}
+
+model Character {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  accountId String         @map("account_id") @db.Uuid
+  name      String         @db.VarChar(24)
+  /// Nome normalizado para unicidade sem diferenciar maiúsculas/acentos.
+  nameKey   String         @unique @map("name_key") @db.VarChar(24)
+  classId   CharacterClass @map("class_id")
+  affinity  Affinity
+  level     Int            @default(1)
+  /// XP acumulada dentro do nível atual.
+  xp        Int            @default(0)
+  /// Versão para controle de concorrência otimista.
+  version   Int            @default(1)
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  account Account        @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  items   ItemInstance[]
+  hunt    HuntSession?
+
+  @@index([accountId])
+  @@map("characters")
+}
+
+// ───────────────────────────── Economia ─────────────────────────────
+
+enum Currency {
+  GOLD
+  ESSENCE
+  DIAMOND
+}
+
+enum LedgerReason {
+  HUNT_REWARD
+  BOSS_REWARD
+  ITEM_UPGRADE
+  NPC_SALE
+  MARKET_ESCROW_LOCK
+  MARKET_ESCROW_RELEASE
+  MARKET_FEE
+  ADMIN_GRANT
+  ADMIN_REVOKE
+  DEV_SEED
+}
+
+/// Saldo atual (projeção do livro-razão). Alterado somente pelo serviço de ledger.
+model WalletBalance {
+  accountId String   @map("account_id") @db.Uuid
+  currency  Currency
+  amount    BigInt   @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@id([accountId, currency])
+  @@map("wallet_balances")
+}
+
+/// Livro-razão imutável (append-only, garantido por trigger).
+model LedgerEntry {
+  id             BigInt       @id @default(autoincrement())
+  accountId      String       @map("account_id") @db.Uuid
+  currency       Currency
+  delta          BigInt
+  balanceAfter   BigInt       @map("balance_after")
+  reason         LedgerReason
+  idempotencyKey String       @unique @map("idempotency_key") @db.VarChar(128)
+  refType        String?      @map("ref_type") @db.VarChar(64)
+  refId          String?      @map("ref_id") @db.VarChar(128)
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, currency, createdAt])
+  @@index([refType, refId])
+  @@map("ledger_entries")
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+/// Idempotência de operações compostas (ex.: aprimorar item = débito + mutação do item).
+model IdempotencyRecord {
+  key         String            @id @db.VarChar(128)
+  accountId   String            @map("account_id") @db.Uuid
+  operation   String            @db.VarChar(64)
+  /// Hash do corpo da requisição: mesma chave com corpo diferente é conflito.
+  requestHash String            @map("request_hash") @db.VarChar(128)
+  status      IdempotencyStatus @default(IN_PROGRESS)
+  response    Json?
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt   DateTime          @map("expires_at") @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+// ───────────────────────────── Itens ─────────────────────────────
+
+enum EquipSlot {
+  weapon
+  head
+  chest
+  hands
+  legs
+  feet
+}
+
+enum Rarity {
+  common
+  uncommon
+  rare
+  epic
+  legendary
+  astral
+}
+
+enum ItemSource {
+  DROP
+  CRAFT
+  QUEST
+  ADMIN
+}
+
+/// Instância única de item. A definição estática (nome, slot, visual) vive em game-core (defId).
+model ItemInstance {
+  id               String     @id @default(uuid(7)) @db.Uuid
+  ownerCharacterId String     @map("owner_character_id") @db.Uuid
+  defId            String     @map("def_id") @db.VarChar(64)
+  rarity           Rarity
+  upgradeLevel     Int        @default(0) @map("upgrade_level")
+  /// Bônus sorteados na criação (ItemBonuses de game-core), imutáveis.
+  bonuses          Json
+  /// Versão das regras usada para gerar o item.
+  rulesetVersion   Int        @map("ruleset_version")
+  /// Nulo = no inventário. Único por personagem e slot.
+  equippedSlot     EquipSlot? @map("equipped_slot")
+  tradable         Boolean    @default(true)
+  source           ItemSource
+  sourceRef        String?    @map("source_ref") @db.VarChar(128)
+  version          Int        @default(1)
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  owner Character @relation(fields: [ownerCharacterId], references: [id], onDelete: Restrict)
+
+  @@unique([ownerCharacterId, equippedSlot])
+  @@index([ownerCharacterId])
+  @@map("item_instances")
+}
+
+// ───────────────────────────── Caça idle ─────────────────────────────
+
+enum HuntStatus {
+  ACTIVE
+  STOPPED
+}
+
+/// Estado da caça automática. O servidor liquida o tempo decorrido sob demanda,
+/// de forma determinística a partir de `seed` e `encountersResolved`.
+model HuntSession {
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  characterId        String     @unique @map("character_id") @db.Uuid
+  regionId           String     @map("region_id") @db.VarChar(64)
+  /// Semente uint32 (armazenada em bigint para caber em 0..2^32-1).
+  seed               BigInt
+  rulesetVersion     Int        @map("ruleset_version")
+  status             HuntStatus @default(ACTIVE)
+  startedAt          DateTime   @map("started_at") @db.Timestamptz(3)
+  lastSettledAt      DateTime   @map("last_settled_at") @db.Timestamptz(3)
+  encountersResolved Int        @default(0) @map("encounters_resolved")
+  version            Int        @default(1)
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@map("hunt_sessions")
+}
+
+// ───────────────────────────── Auditoria ─────────────────────────────
+
+/// Trilha de auditoria imutável (append-only, garantido por trigger).
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorType  String   @map("actor_type") @db.VarChar(32)
+  actorId    String?  @map("actor_id") @db.VarChar(64)
+  action     String   @db.VarChar(64)
+  targetType String?  @map("target_type") @db.VarChar(64)
+  targetId   String?  @map("target_id") @db.VarChar(128)
+  payload    Json?
+  ip         String?  @db.VarChar(64)
+  requestId  String?  @map("request_id") @db.VarChar(64)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

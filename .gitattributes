@@ -1,0 +1,8 @@
+# Normaliza finais de linha entre Windows 11 (dev) e Ubuntu (VPS).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.ogg binary
+*.mp3 binary
+*.woff2 binary

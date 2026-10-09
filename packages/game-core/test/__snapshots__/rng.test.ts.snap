@@ -1,0 +1,11 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`createRng > mantém uma sequência fixa (regressão: mudar o algoritmo quebra replays) 1`] = `
+[
+  741260214,
+  4030368243,
+  3000046525,
+  284016154,
+  2334542035,
+]
+`;

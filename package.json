@@ -1,0 +1,38 @@
+{
+  "name": "astral-legends",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Astral Legends: O Despertar — Idle MMORPG de fantasia astral para navegador",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @astral/api --filter @astral/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:int": "pnpm --filter @astral/api test:int",
+    "test:e2e": "pnpm --filter @astral/web test:e2e",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @astral/api db:migrate",
+    "db:deploy": "pnpm --filter @astral/api db:deploy",
+    "db:generate": "pnpm --filter @astral/api db:generate",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.1"
+  }
+}

@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`simulateCombat > mantém resultados fixos (regressão de balanceamento) 1`] = `
+[
+  {
+    "actions": 7,
+    "classId": "guardian",
+    "durationMs": 6324,
+    "playerHp": 151,
+    "winner": "player",
+  },
+  {
+    "actions": 5,
+    "classId": "arcanist",
+    "durationMs": 4431,
+    "playerHp": 105,
+    "winner": "player",
+  },
+  {
+    "actions": 4,
+    "classId": "blade",
+    "durationMs": 3201,
+    "playerHp": 123,
+    "winner": "player",
+  },
+]
+`;

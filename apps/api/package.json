@@ -1,0 +1,43 @@
+{
+  "name": "@astral/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Servidor autoritativo do Astral Legends (Fastify + Prisma + Redis).",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --conditions=@astral/source --env-file-if-exists=.env src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --project unit",
+    "test:int": "vitest run --project integration",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@astral/game-core": "workspace:*",
+    "@astral/shared": "workspace:*",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/helmet": "^13.1.2",
+    "@fastify/rate-limit": "^11.2.1",
+    "@fastify/websocket": "^11.3.3",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "fastify": "^5.12.5",
+    "ioredis": "^6.0.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
+    "pg": "^8.23.1",
+    "pino-pretty": "^13.2.0",
+    "prisma": "7.10.0",
+    "tsx": "^4.23.15",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  }
+}

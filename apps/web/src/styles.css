@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-night-950: #07081a;
+  --color-night-900: #0b0d1f;
+  --color-night-800: #131634;
+  --color-night-700: #1d2150;
+  --color-astral-gold: #f2c46d;
+  --color-astral-gold-soft: #f7dca3;
+  --color-astral-cyan: #8fdcff;
+  --color-astral-violet: #b79bff;
+  --color-solar: #ffb347;
+  --color-lunar: #c9d6ff;
+  --color-storm: #7fe3d0;
+  --color-abyssal: #a072ff;
+
+  --font-display: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply min-h-dvh bg-night-900 font-sans text-slate-200 antialiased;
+    background-image:
+      radial-gradient(1px 1px at 12% 18%, rgb(255 255 255 / 0.5), transparent),
+      radial-gradient(1px 1px at 68% 8%, rgb(255 255 255 / 0.35), transparent),
+      radial-gradient(1px 1px at 85% 42%, rgb(255 243 196 / 0.45), transparent),
+      radial-gradient(1px 1px at 32% 76%, rgb(191 212 255 / 0.4), transparent),
+      radial-gradient(ellipse at 50% -20%, rgb(73 63 168 / 0.35), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+  }
+}
