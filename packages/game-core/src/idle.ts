@@ -184,7 +184,12 @@ export function resolveEncounter(params: {
     if (rewardRng.chanceBp(monster.rewards.itemDropChanceBp) && region.loot.length > 0) {
       const defId = pickWeighted(region.loot, rewardRng).itemId;
       const rarity = rollRarity(rewardRng);
-      drop = { encounterIndex: index, defId, rarity, bonuses: rollItemBonuses(defId, rarity, rewardRng) };
+      drop = {
+        encounterIndex: index,
+        defId,
+        rarity,
+        bonuses: rollItemBonuses(defId, rarity, rewardRng),
+      };
     }
     recoveryMs = (stats.maxHp - combat.playerHp) * RECOVERY_MS_PER_HP;
   } else if (outcome === 'loss') {
@@ -234,7 +239,8 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
   assertNonNegativeInt(capMs, 'offlineCapMs');
 
   const levelBefore = input.character.level;
-  if (!isRegionUnlocked(region, levelBefore)) throw new RegionLockedError(region.id, region.minLevel);
+  if (!isRegionUnlocked(region, levelBefore))
+    throw new RegionLockedError(region.id, region.minLevel);
 
   // Teto offline: o que passar de `capMs` é descartado.
   const windowStartMs = Math.max(input.lastSettledAtMs, input.nowMs - capMs);

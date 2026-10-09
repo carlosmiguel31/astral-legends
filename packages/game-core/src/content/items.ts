@@ -278,7 +278,8 @@ export interface UsabilityCheck {
 
 /** Regras de quem pode equipar o item. O servidor sempre revalida. */
 export function canEquip(def: ItemDefinition, classId: ClassId, level: number): UsabilityCheck {
-  if (def.classes !== null && !def.classes.includes(classId)) return { usable: false, reason: 'class' };
+  if (def.classes !== null && !def.classes.includes(classId))
+    return { usable: false, reason: 'class' };
   if (level < def.minLevel) return { usable: false, reason: 'level' };
   return { usable: true, reason: 'ok' };
 }

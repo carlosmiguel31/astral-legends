@@ -4,7 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadGameState, lockCharacter } from '../../src/modules/game/state.js';
 import { settleActiveHunt } from '../../src/modules/hunt/service.js';
 import { testConfig } from '../helpers.js';
-import { createHero, registerUser, rewindHunt, setupApp, type TestContext, type TestUser } from './support.js';
+import {
+  createHero,
+  registerUser,
+  rewindHunt,
+  setupApp,
+  type TestContext,
+  type TestUser,
+} from './support.js';
 
 let ctx: TestContext;
 const HOUR = 3_600_000;
@@ -52,7 +59,9 @@ describe('iniciar e parar', () => {
 
   it('impede regiões bloqueadas e inexistentes', async () => {
     const { user } = await hunter();
-    const locked = await user.browser.post('/v1/hunt/start', { regionId: 'bosque-das-mares-de-prata' });
+    const locked = await user.browser.post('/v1/hunt/start', {
+      regionId: 'bosque-das-mares-de-prata',
+    });
     expect(locked.statusCode).toBe(403);
     expect(locked.json().error).toMatchObject({ code: 'REGION_LOCKED' });
     expect(locked.json().error.message).toMatch(/nível 6/);
@@ -148,17 +157,25 @@ describe('liquidação', () => {
   it('requisições simultâneas liquidam cada janela uma única vez', async () => {
     const { user, characterId } = await hunter();
     await rewindHunt(ctx.prisma, characterId, 2 * HOUR);
-    const results = await Promise.all(Array.from({ length: 8 }, () => user.browser.post('/v1/hunt/sync')));
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => user.browser.post('/v1/hunt/sync')),
+    );
     expect(results.every((r) => r.statusCode === 200)).toBe(true);
     const settled = results.map((r) => r.json().settlement).filter((s) => s !== null);
     expect(settled.length).toBeGreaterThanOrEqual(1);
 
-    const rows = await ctx.prisma.huntSettlement.findMany({ where: { characterId }, orderBy: { fromEncounter: 'asc' } });
+    const rows = await ctx.prisma.huntSettlement.findMany({
+      where: { characterId },
+      orderBy: { fromEncounter: 'asc' },
+    });
     // As janelas são contíguas e sem sobreposição.
-    for (let i = 1; i < rows.length; i += 1) expect(rows[i]!.fromEncounter).toBe(rows[i - 1]!.toEncounter);
+    for (let i = 1; i < rows.length; i += 1)
+      expect(rows[i]!.fromEncounter).toBe(rows[i - 1]!.toEncounter);
     const totalGold = rows.reduce((sum, r) => sum + r.gold, 0n);
     expect(await goldOf(user.accountId)).toBe(totalGold);
-    const ledgerCount = await ctx.prisma.ledgerEntry.count({ where: { accountId: user.accountId } });
+    const ledgerCount = await ctx.prisma.ledgerEntry.count({
+      where: { accountId: user.accountId },
+    });
     expect(ledgerCount).toBeLessThanOrEqual(rows.length * 2);
   });
 
@@ -185,7 +202,9 @@ describe('liquidação', () => {
     }
     const config = testConfig();
     const settleAt = (accountId: string, now: Date) =>
-      ctx.prisma.$transaction(async (tx) => settleActiveHunt(tx, await lockCharacter(tx, accountId), config, now));
+      ctx.prisma.$transaction(async (tx) =>
+        settleActiveHunt(tx, await lockCharacter(tx, accountId), config, now),
+      );
 
     await settleAt(a.user.accountId, new Date(t0.getTime() + 2 * HOUR));
     for (const minutes of [7, 19, 33, 61, 64, 95, 120]) {
@@ -203,9 +222,14 @@ describe('liquidação', () => {
 
     const drops = async (characterId: string) =>
       (
-        await ctx.prisma.itemInstance.findMany({ where: { ownerCharacterId: characterId, source: 'DROP' } })
+        await ctx.prisma.itemInstance.findMany({
+          where: { ownerCharacterId: characterId, source: 'DROP' },
+        })
       )
-        .map((i) => `${i.sourceRef!.split(':').at(-1)}:${i.defId}:${i.rarity}:${JSON.stringify(i.bonuses)}`)
+        .map(
+          (i) =>
+            `${i.sourceRef!.split(':').at(-1)}:${i.defId}:${i.rarity}:${JSON.stringify(i.bonuses)}`,
+        )
         .sort();
     expect(await drops(b.characterId)).toEqual(await drops(a.characterId));
   });
@@ -239,10 +263,15 @@ describe('liquidação', () => {
     expect(first.state.character.level).toBeGreaterThanOrEqual(6);
     const oldRun = first.state.hunt!.runId;
 
-    const moved = await user.browser.post('/v1/hunt/start', { regionId: 'bosque-das-mares-de-prata' });
+    const moved = await user.browser.post('/v1/hunt/start', {
+      regionId: 'bosque-das-mares-de-prata',
+    });
     expect(moved.statusCode).toBe(200);
     const state = syncResponseSchema.parse(moved.json()).state;
-    expect(state.hunt).toMatchObject({ regionId: 'bosque-das-mares-de-prata', encountersResolved: 0 });
+    expect(state.hunt).toMatchObject({
+      regionId: 'bosque-das-mares-de-prata',
+      encountersResolved: 0,
+    });
     expect(state.hunt!.runId).not.toBe(oldRun);
 
     await rewindHunt(ctx.prisma, characterId, 30 * 60_000);
@@ -261,7 +290,9 @@ describe('liquidação', () => {
     expect(body.settlements).toHaveLength(1);
     expect(body.recentEncounters.length).toBeGreaterThan(0);
     // O histórico persistido não guarda golpes individuais.
-    expect(body.recentEncounters.every((e: { events?: unknown }) => e.events === undefined)).toBe(true);
+    expect(body.recentEncounters.every((e: { events?: unknown }) => e.events === undefined)).toBe(
+      true,
+    );
   });
 
   it('o resumo de liquidação é imutável', async () => {
@@ -296,7 +327,9 @@ describe('tempo real', () => {
       { headers: { origin: 'http://localhost:5173', cookie: user.browser.cookieHeader() } },
       {
         onInit: (socket) =>
-          socket.on('message', (data) => messages.push(wsServerMessageSchema.parse(JSON.parse(String(data))))),
+          socket.on('message', (data) =>
+            messages.push(wsServerMessageSchema.parse(JSON.parse(String(data)))),
+          ),
       },
     );
     await rewindHunt(ctx.prisma, characterId, 5 * 60_000);

@@ -73,7 +73,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.addHook('onSend', async (request, reply) => {
     void reply.header('x-request-id', request.id);
     // Respostas autenticadas nunca devem ser guardadas por caches intermediários.
-    if (request.auth && !reply.hasHeader('cache-control')) void reply.header('cache-control', 'no-store');
+    if (request.auth && !reply.hasHeader('cache-control'))
+      void reply.header('cache-control', 'no-store');
   });
 
   registerErrorHandling(app);

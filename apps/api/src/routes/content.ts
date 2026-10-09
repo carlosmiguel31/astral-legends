@@ -46,7 +46,10 @@ function regionInfo(region: RegionDefinition): RegionInfo {
     })),
     rewards: {
       xp: range(defs.map((d) => d.rewards.xp)),
-      gold: [Math.min(...defs.map((d) => d.rewards.goldMin)), Math.max(...defs.map((d) => d.rewards.goldMax))],
+      gold: [
+        Math.min(...defs.map((d) => d.rewards.goldMin)),
+        Math.max(...defs.map((d) => d.rewards.goldMax)),
+      ],
       essenceChanceBp: range(defs.map((d) => d.rewards.essenceChanceBp)),
       itemDropChanceBp: range(defs.map((d) => d.rewards.itemDropChanceBp)),
     },

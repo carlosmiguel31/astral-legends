@@ -10,22 +10,31 @@ conteúdo inicial), contratos Zod, API Fastify (health, conteúdo, WebSocket), P
 migrações e garantias no banco, serviço de livro-razão idempotente, cliente React + Phaser,
 Docker Compose (Postgres/Redis), Vitest, Playwright, ESLint/Prettier.
 
-## Fase 1 — Conta, personagem e caça idle
+## Fase 1 — Conta, personagem, caça idle e inventário ✅ (validada nesta entrega)
 
-1. Auth: cadastro/login, argon2id, refresh token rotativo, cookies seguros, rate limit por rota.
-2. Personagens: criação com validação de nome, consulta de estado.
-3. **Liquidação de caça** (`game-core/idle.ts` + `modules/hunt`): seleção de monstro, recompensas,
-   transação única com lock otimista, idempotência por intervalo de encontros.
-4. Eventos em tempo real da caça; cena Phaser reproduzindo eventos do servidor.
-5. Reconciliação de economia e métricas de ouro criado/destruído.
-6. Empacotamento: Dockerfiles da API e do web, Caddy com HTTPS, CI (GitHub Actions) rodando
-   lint, typecheck, unitários, integração (serviços Postgres/Redis) e E2E.
+Entregue e testado:
 
-## Fase 2 — Itens e chefe
+1. Auth: cadastro/login/logout, Argon2id, sessões opacas em cookies HttpOnly, refresh rotativo
+   com detecção de reuso, “sair de todos os dispositivos”, CSRF em camadas, bloqueio por
+   tentativas (conta e IP) e limites por rota.
+2. Personagem: criação com nome validado/único, classe, afinidade e aparência; 1 por conta;
+   arma inicial; atributos sempre do servidor.
+3. Caça: iniciar/parar/trocar região, liquidação determinística com teto de 8 h, recompensas
+   no livro-razão, histórico imutável, proteção contra duplicação e corrida.
+4. Inventário: listar, equipar/desequipar (integra ao combate), descartar com auditoria.
+5. Tempo real: WebSocket autenticado com pub/sub no Redis; múltiplas abas sincronizadas.
+6. Cliente: telas de acesso, criação, jogo com HUD, cena Phaser reproduzindo o servidor,
+   resumo do progresso offline, reconexão automática.
 
-Definições de itens e tabelas de drop, geração de bônus por raridade, inventário/equipar,
-aprimoramento (`idempotency_records`), primeiro chefe com tentativas limitadas, segunda e
-terceira regiões, painel admin mínimo com auditoria. **Fecha o MVP.**
+Pendentes da Fase 1 (movidos para a Fase 2): empacotamento para VPS (Dockerfiles, Caddy com
+HTTPS), CI no GitHub Actions, reconciliação periódica de economia e métricas.
+
+## Fase 2 — Aprimoramento, chefe e operação
+
+Aprimoramento de itens (+1…+15, `idempotency_records`), primeiro chefe com tentativas
+limitadas, verificação de e-mail e recuperação de senha, painel admin mínimo com auditoria,
+Dockerfiles + Caddy (HTTPS) + CI, reconciliação de economia, métricas (Prometheus) e retenção do
+histórico de caça. **Fecha o MVP.**
 
 ## Fase 3 — Social e mercado
 

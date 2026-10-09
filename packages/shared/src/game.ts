@@ -22,9 +22,21 @@ export const characterNameSchema = z
 export const APPEARANCE_OPTIONS = { hair: 6, skin: 5, cloak: 6 } as const;
 
 export const appearanceSchema = z.strictObject({
-  hair: z.number().int().min(0).max(APPEARANCE_OPTIONS.hair - 1),
-  skin: z.number().int().min(0).max(APPEARANCE_OPTIONS.skin - 1),
-  cloak: z.number().int().min(0).max(APPEARANCE_OPTIONS.cloak - 1),
+  hair: z
+    .number()
+    .int()
+    .min(0)
+    .max(APPEARANCE_OPTIONS.hair - 1),
+  skin: z
+    .number()
+    .int()
+    .min(0)
+    .max(APPEARANCE_OPTIONS.skin - 1),
+  cloak: z
+    .number()
+    .int()
+    .min(0)
+    .max(APPEARANCE_OPTIONS.cloak - 1),
 });
 export type Appearance = z.infer<typeof appearanceSchema>;
 

@@ -1,6 +1,6 @@
 # Arquitetura — Astral Legends: O Despertar
 
-> Status: **Fase 0 (fundação)** · Regras `RULESET_VERSION = 1` · Atualizado em 2026-10-09
+> Status: **Fase 1 (jogável: auth, personagem, caça idle, inventário)** · Regras `RULESET_VERSION = 2` · Atualizado em 2026-10-09
 
 ## 1. Visão geral
 
@@ -18,7 +18,7 @@ persiste e publica eventos. O cliente renderiza e anima o que o servidor decidiu
                                                     │     │   │                                     │
                                                     │     │   └──▶ Redis (rate limit, pub/sub, filas)│
                                                     │     └──────▶ PostgreSQL (fonte da verdade)    │
-                                                    │ Worker(s) de liquidação idle (fase 1+)        │
+                                                    │ Liquidação sob demanda (sync/ações) + pub/sub │
                                                     └───────────────────────────────────────────────┘
 ```
 
@@ -133,7 +133,8 @@ astral-legends/
 │  │  │  ├─ config/           # validação de ambiente
 │  │  │  ├─ http/             # erros padronizados
 │  │  │  ├─ infra/            # Prisma, Redis
-│  │  │  ├─ modules/economy/  # livro-razão (base da economia)
+│  │  │  ├─ modules/          # auth, characters, hunt, inventory, game, economy
+│  │  │  ├─ realtime/         # hub de notificações (WebSocket + Redis pub/sub)
 │  │  │  ├─ routes/           # health, content, ws
 │  │  │  ├─ app.ts            # composição (injeção de dependências, testável)
 │  │  │  └─ server.ts         # bootstrap + desligamento gracioso
@@ -148,5 +149,96 @@ astral-legends/
 └─ docker-compose.yml         # Postgres + Redis de desenvolvimento
 ```
 
-Módulos previstos em `apps/api/src/modules/`: `auth`, `characters`, `inventory`, `hunt`,
-`economy`, `market` (fase 3), `admin`.
+Módulos em `apps/api/src/modules/`: `auth`, `characters`, `hunt`, `inventory`, `game`
+(estado e rotas), `economy` (livro-razão). Previstos: `market` (Fase 3), `admin` (Fase 2).
+
+## 10. Fase 1 — decisões de arquitetura
+
+### ADR-01 · Sessões opacas em cookies HttpOnly (não JWT)
+
+- Dois tokens aleatórios de 256 bits: **acesso** (15 min) e **refresh** (30 dias, absoluto).
+  O banco guarda apenas o SHA-256 de cada um (`auth_sessions`).
+- Cookies `HttpOnly; SameSite=Strict; Path=/` (+ `Secure` e prefixo `__Host-` em produção).
+  Nenhum token passa pelo JavaScript nem vai para `localStorage`.
+- **Refresh rotativo**: cada uso troca os dois tokens e guarda o hash do refresh anterior.
+  Reapresentar o anterior depois de 30 s ⇒ roubo presumido ⇒ a sessão inteira é revogada.
+  Dentro de 30 s ⇒ `409 REFRESH_RACE` (duas abas renovando juntas), sem revogar.
+- Por que não JWT: revogação imediata (logout, “sair de todos”, reuso de refresh) exige
+  consulta ao servidor de qualquer forma; tokens opacos são mais simples e não vazam claims.
+- Senhas: Argon2id (`@node-rs/argon2`, binários pré-compilados para Windows e Linux),
+  parâmetros mínimos da OWASP (19 MiB, t=2, p=1).
+
+### ADR-02 · CSRF em camadas
+
+`SameSite=Strict` + corpo somente JSON (o parser `text/plain` foi removido, então formulários de
+outro site não passam sem preflight CORS) + checagem de `Origin`/`Referer` em métodos que
+alteram estado (allowlist; em produção a ausência também é recusada) + `Sec-Fetch-Site:
+cross-site` recusado. Não usamos token CSRF sincronizado: com essas camadas ele não acrescenta
+proteção relevante para uma SPA de mesma origem.
+
+### ADR-03 · Enumeração de contas
+
+- Login: mesma resposta (`401`, mesma mensagem) para e-mail inexistente e senha errada, com
+  verificação Argon2 fictícia para igualar o tempo.
+- Cadastro: nome de usuário repetido é informado (é público); e-mail repetido recebe resposta
+  genérica. **Limitação conhecida**: sem verificação de e-mail assíncrona, o sucesso/fracasso do
+  cadastro ainda indica se o e-mail existe; mitigado por limite de cadastros por IP. A proteção
+  completa entra com o fluxo de verificação por e-mail (Fase 2).
+- Força bruta: contadores no Redis por conta (hash do e-mail) e por IP; falha fechado (503) se
+  o Redis cair.
+
+### ADR-04 · Liquidação idle sob demanda, serializada por personagem
+
+Fluxo de `POST /v1/hunt/sync` (e de iniciar/parar/equipar, que liquidam antes de mudar):
+
+```
+BEGIN
+  SELECT … FROM characters WHERE account_id = $1 FOR UPDATE      -- trava por conta
+  settleHunt(seed, próximo encontro, lastSettledAt, agora, personagem)   -- game-core, puro
+  INSERT item_instances (source_ref = hunt:<run>:enc:<n>  UNIQUE)
+  ledger GOLD/ESSENCE  (idempotency_key = hunt:<run>:<de>-<até>:<moeda>  UNIQUE)
+  UPDATE characters    … WHERE version = $v
+  UPDATE hunt_sessions … WHERE version = $v
+  INSERT hunt_settlements (run_id, from_encounter) UNIQUE   -- resumo imutável
+COMMIT
+```
+
+Quatro proteções independentes contra recompensa duplicada; os testes de integração
+mostram que, removendo a trava, as demais ainda impedem duplicação (as requisições
+excedentes falham com 409). O cliente nunca envia resultados — só pede a liquidação.
+
+- **Frequência**: o cliente sincroniza a cada 4 s com a aba visível; outras abas recebem
+  `state.changed` via WebSocket e sincronizam. Sem nada novo, a sincronização não escreve.
+- **Teto offline** de 8 h aplicado no servidor (o excedente é registrado em `forfeited_ms`).
+- **Golpes individuais** não são persistidos (são reproduzíveis pela semente); vão apenas na
+  resposta da liquidação que os gerou, para a animação. O histórico guarda resumos.
+- `run_id` muda a cada caçada iniciada, então chaves de idempotência nunca colidem entre caçadas.
+
+### ADR-05 · Tempo real como notificação, não como dado
+
+O WebSocket autentica pelo mesmo cookie de sessão no upgrade e só transporta notificações
+(`state.changed`, `session.revoked`). O cliente busca o estado por HTTP. Assim não há dois
+caminhos de dados para manter consistentes, e a perda de mensagens nunca causa divergência —
+no máximo atraso até o próximo polling. Entre instâncias, `RealtimeHub` usa Redis pub/sub.
+
+### ADR-06 · A cena Phaser só reproduz
+
+`HuntScene` recebe encontros já liquidados e os anima em ordem (caminhada, golpes com os
+danos reais, recompensas confirmadas). O HUD mostra sempre o estado persistido; a animação
+pode ficar alguns segundos atrás. Backlog acima de 6 encontros é resumido (os excedentes vão
+direto ao registro de combate). O canvas renderiza em 960×540 com zoom 3 na câmera: arte com
+pixels nítidos e textos legíveis.
+
+### ADR-07 · Um personagem por conta, garantido no banco
+
+`characters.account_id` é único: criações simultâneas resultam em exatamente um personagem
+(testado). Nomes são únicos sem diferenciar maiúsculas/acentos (`name_key`), restritos a letras
+latinas (evita homógrafos cirílicos/largura total) e com lista de nomes reservados.
+
+### Novas versões de dependências (verificadas em 2026-10-09)
+
+| Componente        | Versão | Uso                                     |
+| ----------------- | ------ | --------------------------------------- |
+| `@fastify/cookie` | 11.1   | cookies de sessão                       |
+| `@node-rs/argon2` | 2.2    | Argon2id (pré-compilado win32/linux)    |
+| `pg` (dev)        | 8.23   | preparação dos bancos de teste e de E2E |

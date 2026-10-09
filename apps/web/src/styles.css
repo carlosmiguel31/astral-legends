@@ -33,8 +33,4 @@
       radial-gradient(ellipse at 50% -20%, rgb(73 63 168 / 0.35), transparent 60%);
     background-attachment: fixed;
   }
-
-  canvas {
-    image-rendering: pixelated;
-  }
 }

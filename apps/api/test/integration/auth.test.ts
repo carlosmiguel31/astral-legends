@@ -23,7 +23,10 @@ describe('cadastro', () => {
   it('cria a conta, inicia a sessão com cookies seguros e guarda a senha com Argon2id', async () => {
     const browser = new Browser(ctx.app);
     const creds = newCredentials();
-    const res = await browser.post('/v1/auth/register', { ...creds, email: creds.email.toUpperCase() });
+    const res = await browser.post('/v1/auth/register', {
+      ...creds,
+      email: creds.email.toUpperCase(),
+    });
     expect(res.statusCode).toBe(201);
     expect(res.json().account).toMatchObject({
       username: creds.username,
@@ -58,7 +61,10 @@ describe('cadastro', () => {
       username: creds.username.toUpperCase(),
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatchObject({ code: 'USERNAME_TAKEN', fields: { username: expect.any(String) } });
+    expect(res.json().error).toMatchObject({
+      code: 'USERNAME_TAKEN',
+      fields: { username: expect.any(String) },
+    });
   });
 
   it('e-mail repetido recebe resposta genérica, sem confirmar que a conta existe', async () => {
@@ -96,7 +102,10 @@ describe('login', () => {
   it('entra com e-mail e senha corretos', async () => {
     const user = await registerUser(ctx.app);
     const browser = new Browser(ctx.app);
-    const res = await browser.post('/v1/auth/login', { email: user.email, password: user.password });
+    const res = await browser.post('/v1/auth/login', {
+      email: user.email,
+      password: user.password,
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().account.id).toBe(user.accountId);
     expect((await browser.get('/v1/auth/me')).statusCode).toBe(200);
@@ -150,10 +159,16 @@ describe('login', () => {
     const user = await registerUser(ctx.app);
     const browser = new Browser(ctx.app);
     for (let i = 0; i < 5; i += 1) {
-      const r = await browser.post('/v1/auth/login', { email: user.email, password: `errada-${i}-xxxx` });
+      const r = await browser.post('/v1/auth/login', {
+        email: user.email,
+        password: `errada-${i}-xxxx`,
+      });
       expect(r.statusCode).toBe(401);
     }
-    const blocked = await browser.post('/v1/auth/login', { email: user.email, password: user.password });
+    const blocked = await browser.post('/v1/auth/login', {
+      email: user.email,
+      password: user.password,
+    });
     expect(blocked.statusCode).toBe(429);
     expect(blocked.json().error.code).toBe('TOO_MANY_ATTEMPTS');
     // O contador fica no Redis com chave de hash (sem e-mail em claro).
@@ -191,7 +206,9 @@ describe('sessão', () => {
 
     const replay = await ctx.app.inject({ url: '/v1/auth/me', headers: { cookie: stolen } });
     expect(replay.statusCode).toBe(401);
-    const sessions = await ctx.prisma.authSession.findMany({ where: { accountId: user.accountId } });
+    const sessions = await ctx.prisma.authSession.findMany({
+      where: { accountId: user.accountId },
+    });
     expect(sessions.every((s) => s.revokedAt !== null && s.revokedReason === 'logout')).toBe(true);
   });
 
@@ -214,7 +231,10 @@ describe('sessão', () => {
     const user = await registerUser(ctx.app);
     await ctx.prisma.authSession.updateMany({
       where: { accountId: user.accountId },
-      data: { accessExpiresAt: new Date(Date.now() - 2_000), expiresAt: new Date(Date.now() - 1_000) },
+      data: {
+        accessExpiresAt: new Date(Date.now() - 2_000),
+        expiresAt: new Date(Date.now() - 1_000),
+      },
     });
     const res = await user.browser.post('/v1/auth/refresh');
     expect(res.statusCode).toBe(401);
@@ -228,7 +248,9 @@ describe('sessão', () => {
     expect((await user.browser.post('/v1/auth/refresh')).statusCode).toBe(200);
     const newRefresh = [...user.browser.cookies].find(([k]) => k.endsWith('al_rt'))![1];
     expect(newRefresh).not.toBe(oldRefresh);
-    const session = await ctx.prisma.authSession.findFirstOrThrow({ where: { accountId: user.accountId } });
+    const session = await ctx.prisma.authSession.findFirstOrThrow({
+      where: { accountId: user.accountId },
+    });
     expect(session.refreshTokenHash).toBe(sha256Hex(newRefresh));
     expect(session.previousRefreshTokenHash).toBe(sha256Hex(oldRefresh));
 
@@ -273,7 +295,9 @@ describe('sessão', () => {
   it('tokens nunca são persistidos em claro', async () => {
     const user = await registerUser(ctx.app);
     const tokens = [...user.browser.cookies.values()];
-    const session = await ctx.prisma.authSession.findFirstOrThrow({ where: { accountId: user.accountId } });
+    const session = await ctx.prisma.authSession.findFirstOrThrow({
+      where: { accountId: user.accountId },
+    });
     const stored = JSON.stringify(session);
     for (const t of tokens) expect(stored).not.toContain(t);
   });

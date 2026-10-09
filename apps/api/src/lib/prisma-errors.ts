@@ -6,6 +6,7 @@ import { Prisma } from '../generated/prisma/client.js';
  * Com driver adapters o formato de `meta` varia; por isso serializamos tudo.
  */
 export function uniqueViolation(error: unknown): string | null {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return null;
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002')
+    return null;
   return JSON.stringify(error.meta ?? {});
 }

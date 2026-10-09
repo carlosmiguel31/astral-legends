@@ -1,13 +1,14 @@
 import Phaser from 'phaser';
-import { HuntPreviewScene, MAP_COLS, MAP_ROWS, TILE } from './HuntPreviewScene';
+import type { HuntDirector } from './director';
+import { HuntScene, RENDER_SCALE, WORLD_H, WORLD_W } from './HuntScene';
 
 /** Cria a instância do Phaser dentro do elemento informado. */
-export function createGame(parent: HTMLElement): Phaser.Game {
-  return new Phaser.Game({
+export function createGame(parent: HTMLElement, director: HuntDirector): Phaser.Game {
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
-    width: MAP_COLS * TILE,
-    height: MAP_ROWS * TILE,
+    width: WORLD_W * RENDER_SCALE,
+    height: WORLD_H * RENDER_SCALE,
     pixelArt: true,
     backgroundColor: '#0b0d1f',
     scale: {
@@ -15,6 +16,12 @@ export function createGame(parent: HTMLElement): Phaser.Game {
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     banner: false,
-    scene: [HuntPreviewScene],
+    callbacks: {
+      preBoot: (g) => {
+        g.registry.set('director', director);
+      },
+    },
+    scene: [HuntScene],
   });
+  return game;
 }

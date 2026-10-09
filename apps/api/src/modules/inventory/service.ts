@@ -26,7 +26,9 @@ export async function listInventory(
  * responde 404 — igual a um id inexistente, para não revelar que existe.
  */
 async function ownedItem(tx: Tx, character: Character, itemId: string) {
-  const item = await tx.itemInstance.findFirst({ where: { id: itemId, ownerCharacterId: character.id } });
+  const item = await tx.itemInstance.findFirst({
+    where: { id: itemId, ownerCharacterId: character.id },
+  });
   if (!item) throw itemNotFound();
   return item;
 }
@@ -65,7 +67,8 @@ export async function equipItem(
     where: { id: item.id, ownerCharacterId: fresh.id, version: item.version },
     data: { equippedSlot: def.slot, version: { increment: 1 } },
   });
-  if (updated.count !== 1) throw new AppError(409, 'ITEM_CONFLICT', 'O item foi alterado; tente novamente');
+  if (updated.count !== 1)
+    throw new AppError(409, 'ITEM_CONFLICT', 'O item foi alterado; tente novamente');
   return { settle, changed: true };
 }
 
@@ -112,7 +115,12 @@ export async function discardItem(
       action: 'item.discard',
       targetType: 'item_instance',
       targetId: item.id,
-      payload: { defId: item.defId, rarity: item.rarity, source: item.source, sourceRef: item.sourceRef },
+      payload: {
+        defId: item.defId,
+        rarity: item.rarity,
+        source: item.source,
+        sourceRef: item.sourceRef,
+      },
       requestId,
     },
   });

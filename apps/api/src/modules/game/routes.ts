@@ -40,8 +40,14 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
   const { config, prisma, requireAuth, hub } = opts;
 
   /** Executa `fn` numa transação com o personagem da conta travado. */
-  function withCharacter<T>(accountId: string, fn: (tx: Prisma.TransactionClient, c: Character) => Promise<T>) {
-    return prisma.$transaction(async (tx) => fn(tx, await lockCharacter(tx, accountId)), TX_OPTIONS);
+  function withCharacter<T>(
+    accountId: string,
+    fn: (tx: Prisma.TransactionClient, c: Character) => Promise<T>,
+  ) {
+    return prisma.$transaction(
+      async (tx) => fn(tx, await lockCharacter(tx, accountId)),
+      TX_OPTIONS,
+    );
   }
 
   async function syncBody(accountId: string, settle: SettleOutcome | null): Promise<SyncResponse> {
@@ -50,7 +56,11 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
     return {
       state,
       settlement: settle ? settlementView(settle.settlement) : null,
-      recentEncounters: await recentEncounters(prisma, state.character.id, settle?.encounters ?? []),
+      recentEncounters: await recentEncounters(
+        prisma,
+        state.character.id,
+        settle?.encounters ?? [],
+      ),
     };
   }
 
@@ -64,7 +74,12 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
 
   // ── Estado ───────────────────────────────────────────────────────────────
   app.get('/v1/game/state', async (request) => {
-    const body: GameState = await loadGameState(prisma, authOf(request).accountId, config, new Date());
+    const body: GameState = await loadGameState(
+      prisma,
+      authOf(request).accountId,
+      config,
+      new Date(),
+    );
     return body;
   });
 
@@ -80,7 +95,9 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
   // ── Caça ─────────────────────────────────────────────────────────────────
   app.post('/v1/hunt/sync', rate(120), async (request) => {
     const { accountId } = authOf(request);
-    const settle = await withCharacter(accountId, (tx, c) => settleActiveHunt(tx, c, config, new Date()));
+    const settle = await withCharacter(accountId, (tx, c) =>
+      settleActiveHunt(tx, c, config, new Date()),
+    );
     if (settle) notify(accountId, 'hunt');
     return syncBody(accountId, settle);
   });
@@ -88,7 +105,9 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
   app.post('/v1/hunt/start', rate(30), async (request) => {
     const { accountId } = authOf(request);
     const { regionId } = parseInput(startHuntRequestSchema, request.body);
-    const result = await withCharacter(accountId, (tx, c) => startHunt(tx, c, regionId, config, new Date()));
+    const result = await withCharacter(accountId, (tx, c) =>
+      startHunt(tx, c, regionId, config, new Date()),
+    );
     if (result.changed || result.settle) notify(accountId, 'hunt');
     return syncBody(accountId, result.settle);
   });
@@ -102,7 +121,10 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
 
   app.get('/v1/hunt/history', async (request) => {
     const { accountId } = authOf(request);
-    const character = await prisma.character.findUnique({ where: { accountId }, select: { id: true } });
+    const character = await prisma.character.findUnique({
+      where: { accountId },
+      select: { id: true },
+    });
     if (!character) throw characterNotFound();
     const body: HuntHistoryResponse = {
       settlements: await settlementHistory(prisma, character.id),
@@ -126,7 +148,9 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
   app.post('/v1/inventory/:itemId/equip', rate(60), async (request) => {
     const { accountId } = authOf(request);
     const { itemId } = parseInput(itemIdParamsSchema, request.params);
-    const result = await withCharacter(accountId, (tx, c) => equipItem(tx, c, itemId, config, new Date()));
+    const result = await withCharacter(accountId, (tx, c) =>
+      equipItem(tx, c, itemId, config, new Date()),
+    );
     if (result.changed || result.settle) notify(accountId, 'inventory');
     return syncBody(accountId, result.settle);
   });
@@ -134,7 +158,9 @@ export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions):
   app.post('/v1/inventory/:itemId/unequip', rate(60), async (request) => {
     const { accountId } = authOf(request);
     const { itemId } = parseInput(itemIdParamsSchema, request.params);
-    const result = await withCharacter(accountId, (tx, c) => unequipItem(tx, c, itemId, config, new Date()));
+    const result = await withCharacter(accountId, (tx, c) =>
+      unequipItem(tx, c, itemId, config, new Date()),
+    );
     if (result.changed || result.settle) notify(accountId, 'inventory');
     return syncBody(accountId, result.settle);
   });

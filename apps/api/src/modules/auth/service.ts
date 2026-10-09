@@ -40,7 +40,11 @@ export class AuthService {
     return access < sessionExpiresAt ? access : sessionExpiresAt;
   }
 
-  private async createSession(accountId: string, meta: SessionMeta, now: Date): Promise<SessionTokens> {
+  private async createSession(
+    accountId: string,
+    meta: SessionMeta,
+    now: Date,
+  ): Promise<SessionTokens> {
     const access = randomToken();
     const refresh = randomToken();
     const expiresAt = new Date(now.getTime() + this.config.SESSION_TTL_DAYS * 86_400_000);
@@ -68,7 +72,10 @@ export class AuthService {
   ): Promise<{ account: AccountView; tokens: SessionTokens }> {
     const usernameKey = input.username.toLowerCase();
     // Nomes de usuário são públicos: informar que já existe não revela dado sensível.
-    const taken = await this.prisma.account.findUnique({ where: { usernameKey }, select: { id: true } });
+    const taken = await this.prisma.account.findUnique({
+      where: { usernameKey },
+      select: { id: true },
+    });
     if (taken) throw usernameTaken();
 
     // O hash é calculado antes de tocar no e-mail para que o tempo de resposta seja o mesmo
@@ -111,7 +118,14 @@ export class AuthService {
 
     const account = await this.prisma.account.findUnique({
       where: { email: input.email },
-      select: { id: true, username: true, email: true, passwordHash: true, status: true, character: { select: { id: true } } },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        passwordHash: true,
+        status: true,
+        character: { select: { id: true } },
+      },
     });
     const ok = await verifyPassword(account?.passwordHash ?? null, input.password);
     if (!account || !ok) {
@@ -159,7 +173,10 @@ export class AuthService {
       return null;
     }
     if (now.getTime() - session.lastSeenAt.getTime() > LAST_SEEN_RESOLUTION_MS) {
-      await this.prisma.authSession.update({ where: { id: session.id }, data: { lastSeenAt: now } });
+      await this.prisma.authSession.update({
+        where: { id: session.id },
+        data: { lastSeenAt: now },
+      });
     }
     return { accountId: session.accountId, sessionId: session.id };
   }
@@ -183,7 +200,8 @@ export class AuthService {
       });
       if (previous) {
         const recent =
-          previous.refreshedAt !== null && now.getTime() - previous.refreshedAt.getTime() < REFRESH_GRACE_MS;
+          previous.refreshedAt !== null &&
+          now.getTime() - previous.refreshedAt.getTime() < REFRESH_GRACE_MS;
         if (recent) throw new AppError(409, 'REFRESH_RACE', 'Sessão renovada em outra aba');
         await this.prisma.authSession.update({
           where: { id: previous.id },
@@ -192,7 +210,11 @@ export class AuthService {
       }
       throw unauthorized('SESSION_EXPIRED', 'Sua sessão expirou. Entre novamente.');
     }
-    if (session.revokedAt !== null || session.expiresAt <= now || session.account.status !== 'ACTIVE') {
+    if (
+      session.revokedAt !== null ||
+      session.expiresAt <= now ||
+      session.account.status !== 'ACTIVE'
+    ) {
       throw unauthorized('SESSION_EXPIRED', 'Sua sessão expirou. Entre novamente.');
     }
 
@@ -211,7 +233,8 @@ export class AuthService {
         lastSeenAt: now,
       },
     });
-    if (updated.count !== 1) throw new AppError(409, 'REFRESH_RACE', 'Sessão renovada em outra aba');
+    if (updated.count !== 1)
+      throw new AppError(409, 'REFRESH_RACE', 'Sessão renovada em outra aba');
     return { access, refresh, accessExpiresAt, expiresAt: session.expiresAt };
   }
 

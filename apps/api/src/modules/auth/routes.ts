@@ -58,7 +58,8 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions):
         return { ok: true };
       } catch (error) {
         // Em corrida entre abas, os cookies novos já chegaram pela outra resposta.
-        if ((error as { code?: string }).code !== 'REFRESH_RACE') clearSessionCookies(reply, config);
+        if ((error as { code?: string }).code !== 'REFRESH_RACE')
+          clearSessionCookies(reply, config);
         throw error;
       }
     },

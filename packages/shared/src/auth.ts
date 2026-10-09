@@ -30,7 +30,11 @@ export const registerRequestSchema = z
   })
   .superRefine((data, ctx) => {
     if (data.password !== data.passwordConfirm) {
-      ctx.addIssue({ code: 'custom', path: ['passwordConfirm'], message: 'As senhas não coincidem' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['passwordConfirm'],
+        message: 'As senhas não coincidem',
+      });
     }
     const lower = data.password.toLowerCase();
     if (lower.includes(data.username.toLowerCase()) || lower === data.email) {

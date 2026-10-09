@@ -131,16 +131,18 @@ describe('settleHunt', () => {
     // O Vigia de Quartzo (nível 5) costuma derrotar Guardiões de nível 1.
     const region = REGIONS['campos-do-alvorecer']!;
     const character = hero({ classId: 'guardian' });
-    const failed = Array.from({ length: 300 }, (_, index) =>
-      resolveEncounter({
-        region,
-        seed: 7,
-        index,
-        startedAtMs: 0,
-        stats: computeCombatStats(character),
-        character,
-        recordEvents: false,
-      }).summary,
+    const failed = Array.from(
+      { length: 300 },
+      (_, index) =>
+        resolveEncounter({
+          region,
+          seed: 7,
+          index,
+          startedAtMs: 0,
+          stats: computeCombatStats(character),
+          character,
+          recordEvents: false,
+        }).summary,
     ).filter((e) => e.outcome !== 'win');
     expect(failed.length).toBeGreaterThan(0);
     for (const e of failed) {

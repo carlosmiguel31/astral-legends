@@ -18,6 +18,20 @@ economia correta e auditável.** Jogável em desktop e celular.
 | Moedas     | ouro e essência por gameplay; diamantes só concedidos por admin (sem compra)                                      |
 | Operação   | painel admin mínimo (consultar conta, conceder/revogar com auditoria), métricas de economia, backups              |
 
+### Situação após a Fase 1
+
+| Área       | Situação                                                                      |
+| ---------- | ----------------------------------------------------------------------------- |
+| Conta      | ✅ cadastro, login, sessões revogáveis · ⏳ verificação de e-mail e de idade  |
+| Personagem | ✅ completo                                                                   |
+| Caça idle  | ✅ 3 regiões, liquidação no servidor, teto de 8 h, eventos em tempo real      |
+| Combate    | ✅ automático, derrota com penalidade, registro no cliente                    |
+| Progressão | ✅ níveis 1–30 com penalidade de XP                                           |
+| Itens      | ✅ 6 slots, Comum/Rara/Épica, equipar/desequipar/descartar · ⏳ aprimoramento |
+| Chefe      | ⏳ Fase 2                                                                     |
+| Moedas     | ✅ ouro e essência via livro-razão · diamantes sem fonte (correto nesta fase) |
+| Operação   | ⏳ admin, métricas, backups, deploy                                           |
+
 ## Fora do MVP (explicitamente)
 
 - Mercado entre jogadores, trocas diretas, guildas, chat global.

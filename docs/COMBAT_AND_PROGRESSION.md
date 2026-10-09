@@ -1,6 +1,6 @@
 # Regras fundamentais de combate e progressão
 
-> Implementadas em `packages/game-core` · `RULESET_VERSION = 1`.
+> Implementadas em `packages/game-core` · `RULESET_VERSION = 2` (Fase 1).
 > Todas as fórmulas usam **inteiros**; percentuais em basis points (bp): `10_000 bp = 100%`.
 > Toda divisão arredonda para baixo (`floor`). Qualquer mudança que altere resultados exige
 > incrementar `RULESET_VERSION` e atualizar os snapshots de regressão.
@@ -19,7 +19,7 @@ Atributos no nível _L_ = `base da classe + crescimento × (L − 1)`, somados a
 | Classe              | Base (str/int/agi/vit) | Por nível        | Intervalo base | Crítico × | Passiva              |
 | ------------------- | ---------------------- | ---------------- | -------------- | --------- | -------------------- |
 | Guardião Astral     | 8 / 3 / 4 / 12         | +2 / 0 / +1 / +3 | 1600 ms        | 150%      | −10% dano recebido   |
-| Arcanista Celestial | 3 / 12 / 5 / 7         | 0 / +3 / +1 / +1 | 1500 ms        | 160%      | ignora 25% da defesa |
+| Arcanista Celestial | 3 / 12 / 5 / 7         | 0 / +3 / +1 / +2 | 1500 ms        | 160%      | ignora 25% da defesa |
 | Lâmina Estelar      | 9 / 3 / 10 / 8         | +2 / 0 / +3 / +2 | 1100 ms        | 175%      | — (crítico alto)     |
 
 ## 2. Estatísticas derivadas
@@ -90,16 +90,74 @@ Nível máximo (MVP)       = 30
 - XP por abate: 100% até 2 níveis acima do monstro; depois −20% por nível, mínimo 10%.
   Monstros acima do nível do jogador não dão bônus (desestimula “carregar” personagens).
 
-## 5. Regras da caça idle (especificação para a Fase 1)
+## 5. Caça idle (implementada — `idle.ts`)
 
-| Regra                            | Valor inicial                                                      |
-| -------------------------------- | ------------------------------------------------------------------ |
-| Teto de tempo offline acumulado  | 8 h                                                                |
-| Tempo de procura entre encontros | 2 s                                                                |
-| Recuperação após combate         | 0,1 s por ponto de vida perdido (vida volta cheia)                 |
-| Derrota                          | 30 s de recuperação, sem recompensa, caça continua                 |
-| Acesso à região                  | nível ≥ `minLevel` da região                                       |
-| Recompensas                      | XP, ouro (`goldMin..goldMax`), chance de essência; itens na Fase 1 |
+Uma caçada é uma sequência de encontros numerados `0, 1, 2…`. Cada encontro usa três
+sub-sementes independentes: `deriveSeed(semente, n, 0)` sorteia o monstro (pesos da região),
+`…, 1` alimenta o combate e `…, 2` as recompensas. Linha do tempo de um encontro:
 
-Valores serão calibrados com simulações automatizadas (milhares de horas simuladas) antes do
-lançamento do MVP — o determinismo do núcleo permite isso de forma barata.
+```
+[procura 3 s] → [combate] → [recuperação]
+recuperação = vitória: 0,1 s por ponto de vida perdido · derrota: 30 s · fuga (120 s de luta): 10 s
+```
+
+| Regra                               | Valor                                                     |
+| ----------------------------------- | --------------------------------------------------------- |
+| Teto de progresso offline           | 8 h (o excedente é descartado e registrado)               |
+| Encontro só conta quando termina    | antes do instante da liquidação; a sobra fica para depois |
+| Derrota / fuga                      | sem recompensa; a caçada continua                         |
+| Entre encontros                     | a vida volta cheia (o custo é o tempo de recuperação)     |
+| Acesso à região                     | nível ≥ `minLevel` (verificado ao iniciar e ao liquidar)  |
+| Máximo por liquidação               | 20 000 encontros (8 h cabem em ≤ 9 600)                   |
+| Equipar/desequipar/trocar de região | liquida antes; o passado usa o equipamento antigo         |
+
+**Propriedade central (testada):** liquidar uma janela de uma vez ou em qualquer número de
+pedaços produz exatamente o mesmo nível, XP, ouro, essência e itens — no `game-core` (37 pedaços
+irregulares) e no banco real (relógio controlado, 7 pedaços).
+
+### Recompensas por vitória (ordem fixa de consumo do RNG)
+
+1. Ouro: inteiro uniforme em `[goldMin, goldMax]` do monstro.
+2. Essência: 1 com probabilidade `essenceChanceBp`.
+3. Item: com probabilidade `itemDropChanceBp` → item ponderado da tabela da região →
+   raridade → bônus sorteados.
+
+XP por abate segue a penalidade por diferença de nível (§4); arredondamento para baixo pode
+resultar em 0 XP contra monstros muito mais fracos.
+
+## 6. Regiões e monstros (MVP)
+
+| Região                    | Nível | Monstros (peso)                                                                        |
+| ------------------------- | ----- | -------------------------------------------------------------------------------------- |
+| Campos do Alvorecer       | 1–6   | Brotolume Nv1 (60), Lobo-Cometa Nv3 (30), Vigia de Quartzo Nv5 (10)                    |
+| Bosque das Marés de Prata | 6–12  | Lince-de-Maré Nv7 (60), Água-Viva Prateada Nv9 (30), Raiz Sussurrante Nv11 (10)        |
+| Desfiladeiro dos Trovões  | 12–20 | Grifo-de-Faísca Nv13 (60), Golem de Basalto Nv16 (25), Serpente de Relâmpago Nv19 (15) |
+
+O chefe Colosso do Eclipse Menor existe no conteúdo, mas não aparece na caça (combate de chefe
+é da Fase 2).
+
+### Balanceamento (simulação, sem equipamento, afinidade Lunar)
+
+| Situação                       | Resultado                                                  |
+| ------------------------------ | ---------------------------------------------------------- |
+| Nível 1 nos Campos             | ~300–450 encontros/h; nível 1 → 6–7 em 1 h; ~0–1 derrota/h |
+| Nível 6 no Bosque              | 6–15% dos encontros perdidos (contra a Raiz, nível 11)     |
+| Nível 12 no Desfiladeiro       | 1–12% perdidos; Serpente (nível 19) ainda é perigosa       |
+| No nível máximo de cada região | 0 derrotas/h, exceto Arcanista no Desfiladeiro (~7%)       |
+
+Mudanças na Fase 1: XP dos monstros dos Campos reduzida (8/18/40), Arcanista ganhou +2 de
+Vitalidade por nível (era +1; perdia ~50% no Bosque), tempo de procura 2 s → 3 s.
+
+## 7. Itens
+
+| Raridade (Fase 1) | Chance no drop | Multiplicador dos bônus |
+| ----------------- | -------------- | ----------------------- |
+| Comum             | 80%            | ×1,0                    |
+| Rara              | 17%            | ×1,4                    |
+| Épica             | 3%             | ×1,9                    |
+
+- 24 itens: arma inicial por classe (concedida na criação, não negociável) e 7 itens por região
+  (arma marcial, arma arcana, cabeça, peito, mãos, pernas, pés).
+- Bônus sorteados na criação e gravados no item (`bonuses`); `ruleset_version` registra a regra.
+- Restrições: armas por classe; nível mínimo = nível da região. O servidor sempre revalida.
+- Inventário: 100 itens não equipados; drops excedentes são descartados e contabilizados.

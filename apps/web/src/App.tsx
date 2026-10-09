@@ -1,67 +1,76 @@
-import { AffinityPanel, ClassesPanel, useContent } from './components/ContentPanels';
-import { ServerStatus } from './components/ServerStatus';
-import { GameCanvas } from './game/GameCanvas';
+import type { AccountView } from '@astral/shared';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Button } from './components/ui';
+import { ApiError, api } from './lib/api';
+import { AuthScreen } from './screens/AuthScreen';
+import { CreateCharacterScreen } from './screens/CreateCharacterScreen';
+import { GameScreen } from './screens/GameScreen';
 
+type Session =
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'guest' }
+  | { status: 'ready'; account: AccountView };
+
+/**
+ * Fluxo: carregando → (sem sessão) login/cadastro → criação de personagem → jogo.
+ * A sessão vive em cookies HttpOnly; aqui guardamos só os dados públicos da conta.
+ */
 export function App() {
-  const { content, error } = useContent();
-  const region = content?.regions[0];
+  const [session, setSession] = useState<Session>({ status: 'loading' });
 
-  return (
-    <div className="mx-auto flex min-h-dvh max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:py-10">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-astral-cyan/80">
-            Idle MMORPG de fantasia astral
-          </p>
-          <h1 className="font-display text-4xl text-astral-gold drop-shadow-[0_0_18px_rgba(242,196,109,0.35)] sm:text-5xl">
-            Astral Legends
-          </h1>
-          <p className="font-display text-lg italic text-astral-gold-soft/80">O Despertar</p>
+  const loadSession = useCallback(() => {
+    api.me().then(
+      (account) => setSession({ status: 'ready', account }),
+      (e: unknown) => {
+        if (e instanceof ApiError && e.status === 401) setSession({ status: 'guest' });
+        else setSession({ status: 'error', message: 'Não foi possível falar com o servidor.' });
+      },
+    );
+  }, []);
+
+  useEffect(loadSession, [loadSession]);
+
+  const retry = () => {
+    setSession({ status: 'loading' });
+    loadSession();
+  };
+
+  const logout = useCallback(() => {
+    void api
+      .logout()
+      .catch(() => undefined)
+      .finally(() => setSession({ status: 'guest' }));
+  }, []);
+
+  switch (session.status) {
+    case 'loading':
+      return <p className="grid min-h-dvh place-items-center text-slate-400">Despertando…</p>;
+    case 'error':
+      return (
+        <div className="mx-auto grid min-h-dvh max-w-md place-items-center px-4">
+          <div className="space-y-3 text-center">
+            <Alert tone="warn">{session.message}</Alert>
+            <Button variant="secondary" onClick={retry}>
+              Tentar novamente
+            </Button>
+          </div>
         </div>
-        <span className="rounded-full border border-astral-violet/40 bg-astral-violet/10 px-3 py-1 text-xs text-astral-violet">
-          Fundação técnica · regras v{content?.rulesetVersion ?? '–'}
-        </span>
-      </header>
-
-      <main className="grid flex-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          <section className="rounded-2xl border border-white/10 bg-night-800/70 p-4 shadow-xl shadow-black/30">
-            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-lg text-astral-gold-soft">
-                {region?.name ?? 'Campos do Alvorecer'}
-              </h2>
-              {region && (
-                <span className="text-xs text-slate-400">
-                  Níveis {region.minLevel}–{region.maxLevel}
-                </span>
-              )}
-            </div>
-            <GameCanvas />
-            <p className="mt-3 text-xs leading-relaxed text-slate-400">
-              Prévia de renderização com arte provisória. O movimento é ilustrativo: combate,
-              experiência e drops serão calculados exclusivamente pelo servidor e apenas
-              reproduzidos aqui.
-            </p>
-            {region && <p className="mt-2 text-sm text-slate-300">{region.description}</p>}
-          </section>
-          <AffinityPanel content={content} />
-        </div>
-
-        <aside className="space-y-6">
-          <ServerStatus />
-          {error ? (
-            <p className="rounded-xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-200">
-              Não foi possível carregar o conteúdo do servidor.
-            </p>
-          ) : (
-            <ClassesPanel content={content} />
-          )}
-        </aside>
-      </main>
-
-      <footer className="text-center text-xs text-slate-600">
-        Universo, personagens e arte originais · protótipo em desenvolvimento
-      </footer>
-    </div>
-  );
+      );
+    case 'guest':
+      return <AuthScreen onAuthenticated={(account) => setSession({ status: 'ready', account })} />;
+    case 'ready':
+      if (!session.account.hasCharacter) {
+        return (
+          <CreateCharacterScreen
+            username={session.account.username}
+            onLogout={logout}
+            onCreated={() =>
+              setSession({ status: 'ready', account: { ...session.account, hasCharacter: true } })
+            }
+          />
+        );
+      }
+      return <GameScreen key={session.account.id} onLogout={logout} />;
+  }
 }

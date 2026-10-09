@@ -57,7 +57,8 @@ export function validateContent(): void {
       if (!item) throw new Error(`${region.id}: item inexistente ${entry.itemId}`);
       assertNonNegativeInt(entry.weight, `${region.id}.${entry.itemId}.weight`);
       if (entry.weight === 0) throw new Error(`${region.id}: peso zero para ${entry.itemId}`);
-      if (item.minLevel > region.maxLevel) throw new Error(`${region.id}: ${item.id} acima da região`);
+      if (item.minLevel > region.maxLevel)
+        throw new Error(`${region.id}: ${item.id} acima da região`);
     }
     if (region.bossId !== null) {
       const boss = MONSTERS[region.bossId];

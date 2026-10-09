@@ -100,7 +100,13 @@ const LIST: MonsterDefinition[] = [
       critPowerBp: 18_000,
       attackIntervalMs: 2_200,
     },
-    rewards: { xp: 400, goldMin: 80, goldMax: 150, essenceChanceBp: 10_000, itemDropChanceBp: 10_000 },
+    rewards: {
+      xp: 400,
+      goldMin: 80,
+      goldMax: 150,
+      essenceChanceBp: 10_000,
+      itemDropChanceBp: 10_000,
+    },
   }),
 
   // ── Bosque das Marés de Prata (6–12) ───────────────────────────────────────

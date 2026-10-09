@@ -198,11 +198,16 @@ export async function startHunt(
   const settle = await settleActiveHunt(tx, character, config, now);
   const fresh = await tx.character.findUniqueOrThrow({ where: { id: character.id } });
   if (!isRegionUnlocked(region, fresh.level)) {
-    throw new AppError(403, 'REGION_LOCKED', `${region.name} é liberada a partir do nível ${region.minLevel}`);
+    throw new AppError(
+      403,
+      'REGION_LOCKED',
+      `${region.name} é liberada a partir do nível ${region.minLevel}`,
+    );
   }
 
   const current = await tx.huntSession.findUnique({ where: { characterId: character.id } });
-  if (current?.status === 'ACTIVE' && current.regionId === regionId) return { changed: false, settle };
+  if (current?.status === 'ACTIVE' && current.regionId === regionId)
+    return { changed: false, settle };
 
   const run = {
     runId: randomUUID(),

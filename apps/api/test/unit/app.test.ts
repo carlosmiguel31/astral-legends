@@ -261,7 +261,10 @@ describe('proteções de sessão e CSRF (sem tocar no banco)', () => {
   });
 
   it('exige origem em produção para métodos que alteram estado', async () => {
-    const a = await makeApp(undefined, { NODE_ENV: 'production', CORS_ORIGINS: 'https://jogo.test' });
+    const a = await makeApp(undefined, {
+      NODE_ENV: 'production',
+      CORS_ORIGINS: 'https://jogo.test',
+    });
     const res = await a.inject({ method: 'POST', url: '/v1/auth/logout' });
     expect(res.statusCode).toBe(403);
   });

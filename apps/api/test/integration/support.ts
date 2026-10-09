@@ -144,7 +144,11 @@ export async function createHero(
 }
 
 /** Desloca a caçada para o passado, simulando tempo decorrido (sem tocar no relógio do app). */
-export async function rewindHunt(prisma: PrismaClient, characterId: string, ms: number): Promise<void> {
+export async function rewindHunt(
+  prisma: PrismaClient,
+  characterId: string,
+  ms: number,
+): Promise<void> {
   const hunt = await prisma.huntSession.findUniqueOrThrow({ where: { characterId } });
   await prisma.huntSession.update({
     where: { id: hunt.id },

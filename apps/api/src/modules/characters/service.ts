@@ -1,4 +1,10 @@
-import { ITEMS, RULESET_VERSION, STARTER_WEAPON, createRng, rollItemBonuses } from '@astral/game-core';
+import {
+  ITEMS,
+  RULESET_VERSION,
+  STARTER_WEAPON,
+  createRng,
+  rollItemBonuses,
+} from '@astral/game-core';
 import type { CreateCharacterRequest } from '@astral/shared';
 import { AppError } from '../../http/errors.js';
 import type { Prisma, PrismaClient } from '../../generated/prisma/client.js';
@@ -38,7 +44,9 @@ export async function createCharacter(
 ): Promise<{ characterId: string }> {
   const nameKey = characterNameKey(input.name);
   if (RESERVED_NAMES.has(nameKey)) {
-    throw new AppError(422, 'NAME_RESERVED', 'Este nome é reservado', { name: 'Este nome é reservado' });
+    throw new AppError(422, 'NAME_RESERVED', 'Este nome é reservado', {
+      name: 'Este nome é reservado',
+    });
   }
 
   try {

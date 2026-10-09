@@ -38,7 +38,9 @@ export function itemDefOrThrow(defId: string) {
   return def;
 }
 
-export function toEquipped(item: Pick<ItemInstance, 'defId' | 'rarity' | 'upgradeLevel' | 'bonuses'>): EquippedItem {
+export function toEquipped(
+  item: Pick<ItemInstance, 'defId' | 'rarity' | 'upgradeLevel' | 'bonuses'>,
+): EquippedItem {
   return {
     slot: itemDefOrThrow(item.defId).slot,
     rarity: item.rarity,

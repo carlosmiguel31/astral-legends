@@ -23,7 +23,12 @@ export const unauthorized = (code = 'UNAUTHENTICATED', message = 'Faça login pa
 export function parseInput<S extends ZodType>(schema: S, data: unknown): z.infer<S> {
   const result = schema.safeParse(data ?? {});
   if (!result.success) {
-    throw new AppError(400, 'VALIDATION_ERROR', 'Verifique os dados informados', fieldErrors(result.error));
+    throw new AppError(
+      400,
+      'VALIDATION_ERROR',
+      'Verifique os dados informados',
+      fieldErrors(result.error),
+    );
   }
   return result.data;
 }

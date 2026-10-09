@@ -24,7 +24,10 @@ export function characterNotFound() {
  * Toda operação que altera personagem, caça ou inventário passa por aqui, o que
  * serializa requisições simultâneas da mesma conta (várias abas, cliques repetidos).
  */
-export async function lockCharacter(tx: Prisma.TransactionClient, accountId: string): Promise<Character> {
+export async function lockCharacter(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+): Promise<Character> {
   const rows = await tx.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM characters WHERE account_id = ${accountId}::uuid FOR UPDATE`;
   const id = rows[0]?.id;
@@ -38,7 +41,12 @@ export function parseAppearance(raw: unknown): Appearance {
 }
 
 /** Monta o estado persistido do jogador. Leitura pura: não liquida a caça. */
-export async function loadGameState(db: Db, accountId: string, config: AppConfig, now: Date): Promise<GameState> {
+export async function loadGameState(
+  db: Db,
+  accountId: string,
+  config: AppConfig,
+  now: Date,
+): Promise<GameState> {
   const character = await db.character.findUnique({ where: { accountId } });
   if (!character) throw characterNotFound();
 

@@ -63,7 +63,10 @@ describe('cadastro', () => {
   });
 
   it('exige confirmação igual e proíbe senha contendo o usuário', () => {
-    const mismatch = registerRequestSchema.safeParse({ ...valid, passwordConfirm: 'diferente-123' });
+    const mismatch = registerRequestSchema.safeParse({
+      ...valid,
+      passwordConfirm: 'diferente-123',
+    });
     expect(fieldErrors(mismatch.error!).passwordConfirm).toMatch(/não coincidem/);
     const weak = registerRequestSchema.safeParse({
       ...valid,
@@ -98,13 +101,24 @@ describe('personagem', () => {
   });
 
   it('valida classe, afinidade e aparência', () => {
-    const base = { name: 'Astra', classId: 'blade', affinity: 'lunar', appearance: { hair: 1, skin: 2, cloak: 3 } };
+    const base = {
+      name: 'Astra',
+      classId: 'blade',
+      affinity: 'lunar',
+      appearance: { hair: 1, skin: 2, cloak: 3 },
+    };
     expect(createCharacterRequestSchema.safeParse(base).success).toBe(true);
-    expect(createCharacterRequestSchema.safeParse({ ...base, classId: 'paladino' }).success).toBe(false);
-    expect(createCharacterRequestSchema.safeParse({ ...base, affinity: 'fogo' }).success).toBe(false);
+    expect(createCharacterRequestSchema.safeParse({ ...base, classId: 'paladino' }).success).toBe(
+      false,
+    );
+    expect(createCharacterRequestSchema.safeParse({ ...base, affinity: 'fogo' }).success).toBe(
+      false,
+    );
     expect(
-      createCharacterRequestSchema.safeParse({ ...base, appearance: { hair: 9, skin: 0, cloak: 0 } })
-        .success,
+      createCharacterRequestSchema.safeParse({
+        ...base,
+        appearance: { hair: 9, skin: 0, cloak: 0 },
+      }).success,
     ).toBe(false);
   });
 });

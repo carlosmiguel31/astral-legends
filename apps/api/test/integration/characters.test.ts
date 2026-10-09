@@ -34,14 +34,23 @@ describe('criação de personagem', () => {
     });
     expect(res.statusCode).toBe(201);
     const state = gameStateSchema.parse(res.json());
-    expect(state.character).toMatchObject({ name, classId: 'guardian', affinity: 'lunar', level: 1, xp: 0, appearance });
+    expect(state.character).toMatchObject({
+      name,
+      classId: 'guardian',
+      affinity: 'lunar',
+      level: 1,
+      xp: 0,
+      appearance,
+    });
     // Mesmos números do game-core para um Guardião Lunar nível 1.
     expect(state.stats).toMatchObject({ maxHp: 170, attack: 16, defense: 10, critChanceBp: 880 });
     expect(state.attributes).toEqual({ str: 8, int: 3, agi: 4, vit: 12 });
     expect(state.wallet).toEqual({ gold: '0', essence: '0', diamonds: '0' });
     expect(state.equipment).toEqual([]);
 
-    const inventory = inventoryResponseSchema.parse((await user.browser.get('/v1/inventory')).json());
+    const inventory = inventoryResponseSchema.parse(
+      (await user.browser.get('/v1/inventory')).json(),
+    );
     expect(inventory.items).toHaveLength(1);
     expect(inventory.items[0]).toMatchObject({
       defId: 'maca-do-juramento',
@@ -87,7 +96,12 @@ describe('criação de personagem', () => {
   it('nomes são únicos sem diferenciar maiúsculas e acentos', async () => {
     const first = await registerUser(ctx.app);
     const name = heroName('Estrela');
-    await first.browser.post('/v1/characters', { name, classId: 'blade', affinity: 'storm', appearance });
+    await first.browser.post('/v1/characters', {
+      name,
+      classId: 'blade',
+      affinity: 'storm',
+      appearance,
+    });
 
     const second = await registerUser(ctx.app);
     const variant = name.toUpperCase().replace('E', 'É');
@@ -192,9 +206,9 @@ describe('inventário', () => {
     expect((await thief.browser.delete(`/v1/inventory/${item.id}`)).statusCode).toBe(404);
     const stored = await ctx.prisma.itemInstance.findUniqueOrThrow({ where: { id: item.id } });
     expect(stored.equippedSlot).toBeNull();
-    expect((await thief.browser.get('/v1/inventory')).json().items.map((i: { id: string }) => i.id)).not.toContain(
-      item.id,
-    );
+    expect(
+      (await thief.browser.get('/v1/inventory')).json().items.map((i: { id: string }) => i.id),
+    ).not.toContain(item.id);
   });
 
   it('impede equipar item de outra classe ou acima do nível', async () => {
@@ -238,7 +252,9 @@ describe('inventário', () => {
         }),
       ),
     );
-    const results = await Promise.all(helmets.map((h) => user.browser.post(`/v1/inventory/${h.id}/equip`)));
+    const results = await Promise.all(
+      helmets.map((h) => user.browser.post(`/v1/inventory/${h.id}/equip`)),
+    );
     expect(results.every((r) => r.statusCode === 200)).toBe(true);
     const equipped = await ctx.prisma.itemInstance.count({
       where: { ownerCharacterId: state.character.id, equippedSlot: 'head' },
