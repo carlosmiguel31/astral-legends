@@ -1,6 +1,6 @@
-import type { ApiError } from '@astral/shared';
+import { fieldErrors, type ApiError } from '@astral/shared';
 import type { FastifyError, FastifyInstance } from 'fastify';
-import { ZodError } from 'zod';
+import { ZodError, type ZodType, type z } from 'zod';
 
 /** Erro de domínio com código estável para o cliente. */
 export class AppError extends Error {
@@ -8,14 +8,33 @@ export class AppError extends Error {
     readonly statusCode: number,
     readonly code: string,
     message: string,
+    readonly fields?: Record<string, string>,
   ) {
     super(message);
     this.name = 'AppError';
   }
 }
 
-function body(code: string, message: string, requestId: string): ApiError {
-  return { error: { code, message, requestId } };
+export const notFound = (code: string, message: string) => new AppError(404, code, message);
+export const unauthorized = (code = 'UNAUTHENTICATED', message = 'Faça login para continuar') =>
+  new AppError(401, code, message);
+
+/** Valida entrada com Zod e lança 400 com erros por campo. */
+export function parseInput<S extends ZodType>(schema: S, data: unknown): z.infer<S> {
+  const result = schema.safeParse(data ?? {});
+  if (!result.success) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Verifique os dados informados', fieldErrors(result.error));
+  }
+  return result.data;
+}
+
+function body(
+  code: string,
+  message: string,
+  requestId: string,
+  fields?: Record<string, string>,
+): ApiError {
+  return { error: { code, message, requestId, ...(fields ? { fields } : {}) } };
 }
 
 /** Padroniza erros: nunca expõe stack traces nem mensagens internas em respostas 5xx. */
@@ -26,10 +45,14 @@ export function registerErrorHandling(app: FastifyInstance): void {
 
   app.setErrorHandler((error: FastifyError | AppError | ZodError, request, reply) => {
     if (error instanceof AppError) {
-      return reply.status(error.statusCode).send(body(error.code, error.message, request.id));
+      return reply
+        .status(error.statusCode)
+        .send(body(error.code, error.message, request.id, error.fields));
     }
     if (error instanceof ZodError) {
-      return reply.status(400).send(body('VALIDATION_ERROR', 'Dados inválidos', request.id));
+      return reply
+        .status(400)
+        .send(body('VALIDATION_ERROR', 'Dados inválidos', request.id, fieldErrors(error)));
     }
     const status = error.statusCode ?? 500;
     if (status === 429) {

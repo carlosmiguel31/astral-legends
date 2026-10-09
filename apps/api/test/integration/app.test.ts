@@ -17,6 +17,8 @@ beforeAll(async () => {
   app = await buildApp({
     config: testConfig({ RATE_LIMIT_MAX: '3' }),
     logger: false,
+    prisma,
+    redis,
     rateLimitRedis: redis,
     probes: {
       database: async () => {

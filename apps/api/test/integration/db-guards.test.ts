@@ -57,6 +57,7 @@ describe('garantias no banco (defesa em profundidade)', () => {
         nameKey: `teste-${Date.now()}`,
         classId: 'blade',
         affinity: 'storm',
+        appearance: { hair: 0, skin: 0, cloak: 0 },
       },
     });
     const item = {
@@ -88,6 +89,7 @@ describe('garantias no banco (defesa em profundidade)', () => {
           nameKey: 'Astra',
           classId: 'arcanist',
           affinity: 'lunar',
+          appearance: { hair: 0, skin: 0, cloak: 0 },
         },
       }),
     ).rejects.toThrow(/name_key_lowercase/);

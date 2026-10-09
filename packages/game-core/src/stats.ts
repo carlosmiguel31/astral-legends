@@ -59,12 +59,27 @@ function validateEquipment(equipment: readonly EquippedItem[]): void {
   }
 }
 
+export interface DerivedBuild {
+  /** Atributos finais (classe + nível + equipamento). */
+  attributes: Attributes;
+  stats: CombatStats;
+}
+
+/** Atributos finais do personagem, incluindo equipamento. */
+export function computeAttributes(build: CharacterBuild): Attributes {
+  return deriveBuild(build).attributes;
+}
+
+export function computeCombatStats(build: CharacterBuild): CombatStats {
+  return deriveBuild(build).stats;
+}
+
 /**
- * Calcula as estatísticas de combate finais de um personagem.
+ * Calcula atributos e estatísticas de combate finais de um personagem.
  * Ordem: atributos (classe + nível + itens) → derivadas → bônus planos de itens
  * → passiva de afinidade → limites.
  */
-export function computeCombatStats(build: CharacterBuild): CombatStats {
+export function deriveBuild(build: CharacterBuild): DerivedBuild {
   validateEquipment(build.equipment);
   const cls = CLASSES[build.classId];
   const attrs = attributesAtLevel(build.classId, build.level);
@@ -107,13 +122,16 @@ export function computeCombatStats(build: CharacterBuild): CombatStats {
   }
 
   return {
-    maxHp,
-    attack,
-    defense,
-    critChanceBp: clamp(critChanceBp, 0, CRIT_CHANCE_CAP_BP),
-    critPowerBp: cls.baseCritPowerBp,
-    attackIntervalMs: Math.max(MIN_ATTACK_INTERVAL_MS, attackIntervalMs),
-    armorPenBp: cls.armorPenBp,
-    damageReductionBp: cls.damageReductionBp,
+    attributes: attrs,
+    stats: {
+      maxHp,
+      attack,
+      defense,
+      critChanceBp: clamp(critChanceBp, 0, CRIT_CHANCE_CAP_BP),
+      critPowerBp: cls.baseCritPowerBp,
+      attackIntervalMs: Math.max(MIN_ATTACK_INTERVAL_MS, attackIntervalMs),
+      armorPenBp: cls.armorPenBp,
+      damageReductionBp: cls.damageReductionBp,
+    },
   };
 }

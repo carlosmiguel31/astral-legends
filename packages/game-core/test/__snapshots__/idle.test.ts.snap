@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`settleHunt > mantém resultados fixos (regressão do ruleset) 1`] = `
+{
+  "drops": [
+    "0:luvas-de-couro-de-cometa:common",
+    "21:peitoral-do-alvorecer:common",
+    "45:botas-de-viajante:rare",
+    "82:botas-de-viajante:epic",
+    "85:lamina-curta-de-quartzo:common",
+    "99:botas-de-viajante:common",
+    "159:perneiras-de-linho-astral:common",
+    "338:varinha-de-orvalho:rare",
+    "345:perneiras-de-linho-astral:common",
+    "359:luvas-de-couro-de-cometa:common",
+    "365:botas-de-viajante:common",
+  ],
+  "encounters": 476,
+  "essence": 12,
+  "gold": 3192,
+  "level": 7,
+  "losses": 1,
+  "windowEndMs": 3598429,
+  "wins": 475,
+  "xp": 133,
+}
+`;

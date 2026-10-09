@@ -2,7 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { TEST_DATABASE_URL } from '../helpers.js';
+import { createRedis } from '../../src/infra/redis.js';
+import { TEST_DATABASE_URL, TEST_REDIS_URL } from '../helpers.js';
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../prisma/migrations');
 
@@ -34,6 +35,12 @@ export default async function setup(): Promise<void> {
   } finally {
     await client.end();
   }
+
+  // Contadores de login e limites ficam no Redis: começa cada execução do zero.
+  const redis = createRedis(TEST_REDIS_URL);
+  await redis.connect();
+  await redis.flushdb();
+  redis.disconnect();
 }
 
 async function ensureDatabase(url: URL, dbName: string): Promise<void> {

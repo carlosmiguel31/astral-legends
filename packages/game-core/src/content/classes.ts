@@ -38,7 +38,7 @@ export const CLASSES: Readonly<Record<ClassId, ClassDefinition>> = {
     lore: 'Leem as órbitas dos astros como grimórios e convertem o brilho das estrelas em feitiços.',
     primaryAttribute: 'int',
     baseAttributes: { str: 3, int: 12, agi: 5, vit: 7 },
-    growthPerLevel: { str: 0, int: 3, agi: 1, vit: 1 },
+    growthPerLevel: { str: 0, int: 3, agi: 1, vit: 2 },
     baseAttackIntervalMs: 1_500,
     baseCritPowerBp: 16_000,
     armorPenBp: 2_500,

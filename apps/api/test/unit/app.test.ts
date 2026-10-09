@@ -7,8 +7,10 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
+import { createPrisma } from '../../src/infra/prisma.js';
+import { createRedis } from '../../src/infra/redis.js';
 import type { HealthProbes } from '../../src/routes/health.js';
-import { testConfig } from '../helpers.js';
+import { TEST_DATABASE_URL, TEST_REDIS_URL, TEST_ORIGIN, testConfig } from '../helpers.js';
 
 const up = async () => undefined;
 const down = async () => {
@@ -21,7 +23,14 @@ async function makeApp(
   probes: HealthProbes = { database: up, redis: up },
   env: Record<string, string> = {},
 ) {
-  app = await buildApp({ config: testConfig(env), probes, logger: false });
+  // Clientes sem conexão: os testes unitários nunca chegam ao banco nem ao Redis.
+  app = await buildApp({
+    config: testConfig(env),
+    probes,
+    logger: false,
+    prisma: createPrisma(TEST_DATABASE_URL),
+    redis: createRedis(TEST_REDIS_URL),
+  });
   await app.ready();
   return app;
 }
@@ -65,6 +74,15 @@ describe('conteúdo', () => {
       'Lâmina Estelar',
     ]);
     expect(body.affinities.map((a) => a.name)).toEqual(['Solar', 'Lunar', 'Tempestade', 'Abissal']);
+    expect(body.regions.map((r) => [r.name, r.unlock.minLevel])).toEqual([
+      ['Campos do Alvorecer', 1],
+      ['Bosque das Marés de Prata', 6],
+      ['Desfiladeiro dos Trovões', 12],
+    ]);
+    for (const region of body.regions) {
+      expect(region.monsters.length).toBeGreaterThan(0);
+      expect(region.loot.length).toBeGreaterThan(0);
+    }
     expect(res.headers['cache-control']).toContain('max-age');
   });
 });
@@ -137,7 +155,7 @@ describe('websocket', () => {
       },
     );
     const hello = await waitFor(() => messages.find((m) => m.type === 'hello'));
-    expect(hello).toMatchObject({ type: 'hello', protocol: 1 });
+    expect(hello).toMatchObject({ type: 'hello', protocol: 2, authenticated: false });
 
     ws.send(JSON.stringify({ type: 'ping', nonce: 'n1' }));
     const pong = await waitFor(() => messages.find((m) => m.type === 'pong'));
@@ -175,5 +193,76 @@ describe('websocket', () => {
     await expect(
       a.injectWS('/ws', { headers: { origin: 'https://malicioso.test' } }),
     ).rejects.toThrow();
+  });
+});
+
+describe('proteções de sessão e CSRF (sem tocar no banco)', () => {
+  it('rotas de jogo exigem sessão', async () => {
+    const a = await makeApp();
+    for (const [method, url] of [
+      ['GET', '/v1/game/state'],
+      ['GET', '/v1/auth/me'],
+      ['POST', '/v1/hunt/sync'],
+      ['GET', '/v1/inventory'],
+    ] as const) {
+      const res = await a.inject({ method, url, headers: { origin: TEST_ORIGIN } });
+      expect(res.statusCode, url).toBe(401);
+      expect(res.json().error.code).toBe('UNAUTHENTICATED');
+    }
+  });
+
+  it('recusa métodos que alteram estado vindos de outra origem', async () => {
+    const a = await makeApp();
+    const res = await a.inject({
+      method: 'POST',
+      url: '/v1/auth/login',
+      headers: { origin: 'https://site-malicioso.test', 'content-type': 'application/json' },
+      payload: { email: 'x@y.com', password: 'qualquer' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('CSRF_REJECTED');
+  });
+
+  it('recusa requisições marcadas pelo navegador como cross-site', async () => {
+    const a = await makeApp();
+    const res = await a.inject({
+      method: 'POST',
+      url: '/v1/auth/logout',
+      headers: { 'sec-fetch-site': 'cross-site' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('não aceita corpo text/plain (formulários entre sites)', async () => {
+    const a = await makeApp();
+    const res = await a.inject({
+      method: 'POST',
+      url: '/v1/auth/login',
+      headers: { origin: TEST_ORIGIN, 'content-type': 'text/plain' },
+      payload: '{"email":"x@y.com","password":"abc"}',
+    });
+    expect(res.statusCode).toBe(415);
+  });
+
+  it('valida a entrada antes de qualquer consulta, com erros por campo', async () => {
+    const a = await makeApp();
+    const res = await a.inject({
+      method: 'POST',
+      url: '/v1/auth/register',
+      headers: { origin: TEST_ORIGIN },
+      payload: { username: 'a', email: 'invalido', password: '123', passwordConfirm: '456' },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(Object.keys(body.error.fields)).toEqual(
+      expect.arrayContaining(['username', 'email', 'password']),
+    );
+  });
+
+  it('exige origem em produção para métodos que alteram estado', async () => {
+    const a = await makeApp(undefined, { NODE_ENV: 'production', CORS_ORIGINS: 'https://jogo.test' });
+    const res = await a.inject({ method: 'POST', url: '/v1/auth/logout' });
+    expect(res.statusCode).toBe(403);
   });
 });

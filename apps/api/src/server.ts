@@ -11,13 +11,22 @@ async function main(): Promise<void> {
 
   const prisma = createPrisma(config.DATABASE_URL);
   const redis = createRedis(config.REDIS_URL);
-  redis.on('error', () => {
-    // Erros de conexão aparecem no /health/ready; evitamos derrubar o processo.
-  });
+  // Pub/sub exige uma conexão dedicada; aqui o enfileiramento offline é permitido
+  // para que a assinatura seja refeita após reconexões.
+  const redisSubscriber = createRedis(config.REDIS_URL, { subscriber: true });
+  for (const client of [redis, redisSubscriber]) {
+    client.on('error', () => {
+      // Erros de conexão aparecem no /health/ready; evitamos derrubar o processo.
+    });
+  }
   await redis.connect().catch(() => undefined);
+  await redisSubscriber.connect().catch(() => undefined);
 
   const app = await buildApp({
     config,
+    prisma,
+    redis,
+    redisSubscriber,
     rateLimitRedis: redis,
     probes: {
       database: async () => {
@@ -27,6 +36,9 @@ async function main(): Promise<void> {
         await redis.ping();
       },
     },
+  });
+  await app.realtime.start().catch((error: unknown) => {
+    app.log.warn({ err: error }, 'tempo real sem Redis: entregas apenas locais');
   });
 
   let shuttingDown = false;
@@ -38,6 +50,7 @@ async function main(): Promise<void> {
       await app.close();
       await prisma.$disconnect();
       redis.disconnect();
+      redisSubscriber.disconnect();
     } finally {
       process.exit(0);
     }

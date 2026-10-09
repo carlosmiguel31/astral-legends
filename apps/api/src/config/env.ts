@@ -20,6 +20,22 @@ const envSchema = z
     CORS_ORIGINS: csv.default(['http://localhost:5173', 'http://127.0.0.1:5173']),
     TRUST_PROXY: z.stringbool().default(false),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
+
+    // Sessões
+    ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
+    SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+    /** Força o atributo Secure nos cookies. Sempre ativo em produção. */
+    COOKIE_SECURE: z.stringbool().optional(),
+
+    // Proteções de autenticação (por IP / por conta)
+    REGISTER_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(10),
+    LOGIN_LIMIT_PER_15MIN: z.coerce.number().int().positive().default(30),
+    LOGIN_MAX_FAILURES_PER_ACCOUNT: z.coerce.number().int().positive().default(5),
+    LOGIN_MAX_FAILURES_PER_IP: z.coerce.number().int().positive().default(30),
+    LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
+
+    // Jogo
+    INVENTORY_CAPACITY: z.coerce.number().int().min(10).max(500).default(100),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;

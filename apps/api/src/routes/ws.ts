@@ -1,9 +1,16 @@
 import { WS_PROTOCOL_VERSION, wsClientMessageSchema, type WsServerMessage } from '@astral/shared';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from '@fastify/websocket';
+import type { AppConfig } from '../config/env.js';
+import { readSessionCookies } from '../modules/auth/cookies.js';
+import type { AuthService } from '../modules/auth/service.js';
+import type { RealtimeHub } from '../realtime/hub.js';
 
 export interface WsOptions {
   isOriginAllowed: (origin: string | undefined) => boolean;
+  auth: AuthService;
+  config: AppConfig;
+  hub: RealtimeHub;
   heartbeatMs?: number;
   /** Máximo de mensagens por janela antes de encerrar a conexão. */
   maxMessagesPerWindow?: number;
@@ -15,8 +22,9 @@ function send(socket: WebSocket, message: WsServerMessage): void {
 }
 
 /**
- * Canal em tempo real. Nesta fase só faz handshake e ping/pong; as próximas
- * fases publicam eventos de caça, drops e chat. Toda mensagem do cliente é
+ * Canal em tempo real. Conexões autenticadas (cookie de sessão no upgrade)
+ * recebem notificações da própria conta (`state.changed`, `session.revoked`);
+ * as anônimas servem só para medir conectividade. Toda mensagem do cliente é
  * validada com Zod e nenhuma delas altera estado de jogo diretamente.
  */
 export async function wsRoutes(app: FastifyInstance, opts: WsOptions): Promise<void> {
@@ -33,7 +41,10 @@ export async function wsRoutes(app: FastifyInstance, opts: WsOptions): Promise<v
           await reply
             .status(403)
             .send({ error: { code: 'ORIGIN_FORBIDDEN', message: 'Origem não permitida' } });
+          return;
         }
+        const { access } = readSessionCookies(request, opts.config);
+        request.auth = access ? await opts.auth.authenticate(access, new Date()) : null;
       },
     },
     (socket, request) => {
@@ -55,7 +66,12 @@ export async function wsRoutes(app: FastifyInstance, opts: WsOptions): Promise<v
       socket.on('pong', () => {
         alive = true;
       });
-      socket.on('close', () => clearInterval(heartbeat));
+      const accountId = request.auth?.accountId;
+      if (accountId) opts.hub.add(accountId, socket);
+      socket.on('close', () => {
+        clearInterval(heartbeat);
+        if (accountId) opts.hub.remove(accountId, socket);
+      });
 
       socket.on('message', (raw, isBinary) => {
         const now = Date.now();
@@ -96,7 +112,12 @@ export async function wsRoutes(app: FastifyInstance, opts: WsOptions): Promise<v
         }
       });
 
-      send(socket, { type: 'hello', protocol: WS_PROTOCOL_VERSION, serverTime: Date.now() });
+      send(socket, {
+        type: 'hello',
+        protocol: WS_PROTOCOL_VERSION,
+        serverTime: Date.now(),
+        authenticated: accountId !== undefined,
+      });
     },
   );
 }

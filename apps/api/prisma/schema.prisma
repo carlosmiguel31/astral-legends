@@ -33,6 +33,10 @@ enum AccountStatus {
 
 model Account {
   id           String        @id @default(uuid(7)) @db.Uuid
+  /// Nome de usuário público, como digitado (3–16: letras, números e _).
+  username     String        @db.VarChar(16)
+  /// Nome de usuário em minúsculas, para unicidade sem diferenciar maiúsculas.
+  usernameKey  String        @unique @map("username_key") @db.VarChar(16)
   /// E-mail normalizado (minúsculas, sem espaços).
   email        String        @unique @db.VarChar(254)
   passwordHash String        @map("password_hash") @db.VarChar(255)
@@ -42,7 +46,7 @@ model Account {
   updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   sessions      AuthSession[]
-  characters    Character[]
+  character     Character?
   balances      WalletBalance[]
   ledgerEntries LedgerEntry[]
 
@@ -50,19 +54,30 @@ model Account {
 }
 
 model AuthSession {
-  id               String    @id @default(uuid(7)) @db.Uuid
-  accountId        String    @map("account_id") @db.Uuid
-  /// Hash SHA-256 do refresh token; o token em claro nunca é persistido.
-  refreshTokenHash String    @unique @map("refresh_token_hash") @db.VarChar(128)
-  userAgent        String?   @map("user_agent") @db.VarChar(512)
-  ip               String?   @db.VarChar(64)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
-  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  id                       String    @id @default(uuid(7)) @db.Uuid
+  accountId                String    @map("account_id") @db.Uuid
+  /// SHA-256 do token de acesso (curta duração). Tokens em claro nunca são persistidos.
+  accessTokenHash          String    @unique @map("access_token_hash") @db.VarChar(64)
+  accessExpiresAt          DateTime  @map("access_expires_at") @db.Timestamptz(3)
+  /// SHA-256 do refresh token atual (rotacionado a cada uso).
+  refreshTokenHash         String    @unique @map("refresh_token_hash") @db.VarChar(64)
+  /// Refresh token anterior: se reaparecer, houve roubo e a sessão é revogada.
+  previousRefreshTokenHash String?   @map("previous_refresh_token_hash") @db.VarChar(64)
+  userAgent                String?   @map("user_agent") @db.VarChar(512)
+  ip                       String?   @db.VarChar(64)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt               DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  /// Última rotação: dá uma janela curta de tolerância a refresh simultâneo em várias abas.
+  refreshedAt              DateTime? @map("refreshed_at") @db.Timestamptz(3)
+  /// Expiração absoluta da sessão (refresh).
+  expiresAt                DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt                DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason            String?   @map("revoked_reason") @db.VarChar(32)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
+  @@index([previousRefreshTokenHash])
   @@map("auth_sessions")
 }
 
@@ -82,26 +97,29 @@ enum Affinity {
 }
 
 model Character {
-  id        String         @id @default(uuid(7)) @db.Uuid
-  accountId String         @map("account_id") @db.Uuid
-  name      String         @db.VarChar(24)
+  id         String         @id @default(uuid(7)) @db.Uuid
+  /// Único: um personagem por conta no MVP (garantido também contra corridas).
+  accountId  String         @unique @map("account_id") @db.Uuid
+  name       String         @db.VarChar(24)
   /// Nome normalizado para unicidade sem diferenciar maiúsculas/acentos.
-  nameKey   String         @unique @map("name_key") @db.VarChar(24)
-  classId   CharacterClass @map("class_id")
-  affinity  Affinity
-  level     Int            @default(1)
+  nameKey    String         @unique @map("name_key") @db.VarChar(24)
+  classId    CharacterClass @map("class_id")
+  affinity   Affinity
+  /// Aparência inicial (índices de paletas), validada pelo servidor.
+  appearance Json
+  level      Int            @default(1)
   /// XP acumulada dentro do nível atual.
-  xp        Int            @default(0)
+  xp         Int            @default(0)
   /// Versão para controle de concorrência otimista.
-  version   Int            @default(1)
-  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version    Int            @default(1)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  account Account        @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  items   ItemInstance[]
-  hunt    HuntSession?
+  account     Account          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  items       ItemInstance[]
+  hunt        HuntSession?
+  settlements HuntSettlement[]
 
-  @@index([accountId])
   @@map("characters")
 }
 
@@ -223,7 +241,8 @@ model ItemInstance {
   equippedSlot     EquipSlot? @map("equipped_slot")
   tradable         Boolean    @default(true)
   source           ItemSource
-  sourceRef        String?    @map("source_ref") @db.VarChar(128)
+  /// Origem única (ex.: `hunt:<runId>:enc:<n>`): impede criar o mesmo item duas vezes.
+  sourceRef        String?    @unique @map("source_ref") @db.VarChar(128)
   version          Int        @default(1)
   createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -247,6 +266,8 @@ enum HuntStatus {
 model HuntSession {
   id                 String     @id @default(uuid(7)) @db.Uuid
   characterId        String     @unique @map("character_id") @db.Uuid
+  /// Identifica cada caçada iniciada; compõe as chaves de idempotência das recompensas.
+  runId              String     @map("run_id") @db.Uuid
   regionId           String     @map("region_id") @db.VarChar(64)
   /// Semente uint32 (armazenada em bigint para caber em 0..2^32-1).
   seed               BigInt
@@ -260,6 +281,40 @@ model HuntSession {
   character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@map("hunt_sessions")
+}
+
+/// Resumo imutável de cada liquidação. A unicidade (run, primeiro encontro) impede
+/// que a mesma janela de caça seja liquidada duas vezes.
+model HuntSettlement {
+  id             BigInt   @id @default(autoincrement())
+  characterId    String   @map("character_id") @db.Uuid
+  runId          String   @map("run_id") @db.Uuid
+  regionId       String   @map("region_id") @db.VarChar(64)
+  fromEncounter  Int      @map("from_encounter")
+  toEncounter    Int      @map("to_encounter")
+  windowStart    DateTime @map("window_start") @db.Timestamptz(3)
+  windowEnd      DateTime @map("window_end") @db.Timestamptz(3)
+  forfeitedMs    BigInt   @default(0) @map("forfeited_ms")
+  wins           Int
+  losses         Int
+  timeouts       Int
+  xpGained       Int      @map("xp_gained")
+  gold           BigInt
+  essence        BigInt
+  itemsDropped   Int      @map("items_dropped")
+  itemsDiscarded Int      @map("items_discarded")
+  levelBefore    Int      @map("level_before")
+  levelAfter     Int      @map("level_after")
+  /// Últimos encontros (resumo) para o histórico de combate.
+  recent         Json
+  rulesetVersion Int      @map("ruleset_version")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, fromEncounter])
+  @@index([characterId, createdAt])
+  @@map("hunt_settlements")
 }
 
 // ───────────────────────────── Auditoria ─────────────────────────────
