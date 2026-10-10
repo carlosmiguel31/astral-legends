@@ -6,7 +6,10 @@ export interface MonsterDefinition {
   description: string;
   level: number;
   affinity: AffinityId;
+  /** Chefe: só aparece como último encontro de waves de chefe. */
   isBoss: boolean;
+  /** Elite: só aparece como último encontro de waves de elite. */
+  isElite: boolean;
   stats: CombatStats;
   rewards: {
     xp: number;
@@ -21,8 +24,9 @@ export interface MonsterDefinition {
 
 const NO_PASSIVES = { armorPenBp: 0, damageReductionBp: 0 } as const;
 
-type MonsterInput = Omit<MonsterDefinition, 'stats' | 'isBoss'> & {
+type MonsterInput = Omit<MonsterDefinition, 'stats' | 'isBoss' | 'isElite'> & {
   isBoss?: boolean;
+  isElite?: boolean;
   stats: Omit<CombatStats, 'armorPenBp' | 'damageReductionBp'> &
     Partial<Pick<CombatStats, 'armorPenBp' | 'damageReductionBp'>>;
 };
@@ -31,6 +35,7 @@ function monster(input: MonsterInput): MonsterDefinition {
   return {
     ...input,
     isBoss: input.isBoss ?? false,
+    isElite: input.isElite ?? false,
     stats: { ...NO_PASSIVES, ...input.stats },
   };
 }
@@ -85,6 +90,28 @@ const LIST: MonsterDefinition[] = [
     },
     rewards: { xp: 40, goldMin: 10, goldMax: 20, essenceChanceBp: 700, itemDropChanceBp: 250 },
   }),
+  // Elite da wave 5 (e múltiplos de 5 que não sejam de chefe). Fase 2A.
+  monster({
+    id: 'lobo-cometa-ancestral',
+    name: 'Lobo-Cometa Ancestral',
+    description:
+      'O líder da alcateia, com a juba incandescente de um cometa que nunca terminou de cair.',
+    level: 4,
+    affinity: 'storm',
+    isElite: true,
+    stats: {
+      maxHp: 240,
+      attack: 16,
+      defense: 10,
+      critChanceBp: 900,
+      critPowerBp: 16_000,
+      attackIntervalMs: 1_300,
+    },
+    // Recompensa por abate moderada: repetir a wave não pode render mais que avançar.
+    rewards: { xp: 40, goldMin: 14, goldMax: 22, essenceChanceBp: 1_500, itemDropChanceBp: 500 },
+  }),
+  // Chefe da wave 10. Atributos revistos na Fase 2A (era 900/30/25: imbatível no nível 6
+  // para três das quatro afinidades).
   monster({
     id: 'colosso-do-eclipse-menor',
     name: 'Colosso do Eclipse Menor',
@@ -93,19 +120,21 @@ const LIST: MonsterDefinition[] = [
     affinity: 'abyssal',
     isBoss: true,
     stats: {
-      maxHp: 900,
-      attack: 30,
-      defense: 25,
+      maxHp: 560,
+      attack: 22,
+      defense: 16,
       critChanceBp: 500,
-      critPowerBp: 18_000,
+      critPowerBp: 17_000,
       attackIntervalMs: 2_200,
     },
     rewards: {
-      xp: 400,
-      goldMin: 80,
-      goldMax: 150,
-      essenceChanceBp: 10_000,
-      itemDropChanceBp: 10_000,
+      // Revisto na Fase 2A (era 400 XP, 80–150 ouro, 100% essência e item): o chefe aparece
+      // a cada 15 vitórias ao farmar a wave 10; o prêmio grande é a primeira conclusão.
+      xp: 80,
+      goldMin: 30,
+      goldMax: 50,
+      essenceChanceBp: 3_000,
+      itemDropChanceBp: 1_000,
     },
   }),
 

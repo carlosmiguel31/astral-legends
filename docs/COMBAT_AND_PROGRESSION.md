@@ -110,6 +110,7 @@ recuperação = vitória: 0,1 s por ponto de vida perdido · derrota: 30 s · fu
 | Acesso à região                     | nível ≥ `minLevel` (verificado ao iniciar e ao liquidar)  |
 | Máximo por liquidação               | 20 000 encontros (8 h cabem em ≤ 9 600)                   |
 | Equipar/desequipar/trocar de região | liquida antes; o passado usa o equipamento antigo         |
+| Trocar modo ou wave                 | liquida antes e aplica numa fronteira (ver §5.1)          |
 
 **Propriedade central (testada):** liquidar uma janela de uma vez ou em qualquer número de
 pedaços produz exatamente o mesmo nível, XP, ouro, essência e itens — no `game-core` (37 pedaços
@@ -125,6 +126,43 @@ irregulares) e no banco real (relógio controlado, 7 pedaços).
 XP por abate segue a penalidade por diferença de nível (§4); arredondamento para baixo pode
 resultar em 0 XP contra monstros muito mais fracos.
 
+### 5.1 Waves (Fase 2A — `content/waves.ts`, `idle.ts`, `waveCommands.ts`)
+
+Cada região tem uma sequência finita de waves. Uma wave é concluída com **15 vitórias**;
+derrotas e fugas não contam (e não avançam a posição). O progresso é guardado por região.
+
+| Regra                | Valor                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Encontro especial    | waves múltiplas de 5 → elite; de 10 → chefe; ocupa a 15ª vitória (posição 15)                                                              |
+| Monstros comuns      | mesmos pesos da região; +4% atributos e +5% XP/ouro por wave (tetos ×1,6 e ×1,45)                                                          |
+| Elite e chefe        | atributos e recompensas próprios (não escalam com a wave)                                                                                  |
+| Nível mínimo da wave | `minLevel + ⌊(wave − 1) × (maxLevel − minLevel) / 9⌋` da região                                                                            |
+| Modo **Avançar**     | ao concluir, vai para a próxima wave automaticamente                                                                                       |
+| … nível insuficiente | repete a wave atual até ter o nível da próxima (aviso `level_gate`)                                                                        |
+| … fim do conteúdo    | passa a Farmar a última wave implementada e avisa (`content_limit`); nunca cria waves                                                      |
+| … 3 falhas seguidas  | recua uma wave e passa a Farmar (aviso `retreat`); o jogador reativa o Avançar quando quiser                                               |
+| Modo **Farmar**      | ao concluir, repete a mesma wave                                                                                                           |
+| Escolher wave        | só waves já liberadas (≤ maior concluída + 1) e permitidas pelo nível; recomeça a contagem                                                 |
+| Trocar só o modo     | mantém a wave e as vitórias já obtidas                                                                                                     |
+| Primeira conclusão   | ouro `50 × wave × tier`, essência `(1 + ⌊wave/5⌋) × tier` (+5 no chefe), item raro (elite) ou épico (chefe); **uma vez** por wave e região |
+| Repetições           | só as recompensas normais dos abates                                                                                                       |
+
+Sub-sementes: o fluxo `3` (`deriveSeed(semente, n, 3)`) sorteia o item da primeira conclusão,
+sem alterar os fluxos de monstro, combate e recompensas. Na wave 1 os multiplicadores são
+exatamente 100%: "Farmar wave 1" reproduz a Fase 1 bit a bit (teste de regressão).
+
+**Comandos** (modo, wave, região, equipamento) são aplicados numa fronteira: liquida-se até o
+instante do comando, o encontro em andamento é descartado e o próximo começa nesse instante,
+com o mesmo índice. Resultado: os mesmos comandos nos mesmos instantes dão o mesmo estado,
+independentemente de quantas consultas houve (ver `ARCHITECTURE.md`, ADR-08).
+
+**Propriedades testadas:** liquidar em 1 ou N partes atravessando várias waves (game-core e
+banco real); offline de 30 h respeita o teto de 8 h e conclui as 10 waves dos Campos; primeira
+conclusão paga uma única vez mesmo com 8 liquidações simultâneas; trocas simultâneas de 4 abas
+formam uma cadeia auditada sem divergência; reinício do servidor continua de onde parou.
+
+Números e simulações completas: [`BALANCE.md`](./BALANCE.md).
+
 ## 6. Regiões e monstros (MVP)
 
 | Região                    | Nível | Monstros (peso)                                                                        |
@@ -133,8 +171,14 @@ resultar em 0 XP contra monstros muito mais fracos.
 | Bosque das Marés de Prata | 6–12  | Lince-de-Maré Nv7 (60), Água-Viva Prateada Nv9 (30), Raiz Sussurrante Nv11 (10)        |
 | Desfiladeiro dos Trovões  | 12–20 | Grifo-de-Faísca Nv13 (60), Golem de Basalto Nv16 (25), Serpente de Relâmpago Nv19 (15) |
 
-O chefe Colosso do Eclipse Menor existe no conteúdo, mas não aparece na caça (combate de chefe
-é da Fase 2).
+Encontros especiais (Fase 2A), só na 15ª posição das waves correspondentes:
+
+| Especial                         | Wave          | Nv  | Afinidade  | Vida | Ataque | Defesa | Crítico | Intervalo | XP  | Ouro  | Essência | Item |
+| -------------------------------- | ------------- | --- | ---------- | ---- | ------ | ------ | ------- | --------- | --- | ----- | -------- | ---- |
+| Lobo-Cometa Ancestral (elite)    | 5 dos Campos  | 4   | Tempestade | 240  | 16     | 10     | 9%      | 1,3 s     | 40  | 14–22 | 15%      | 5%   |
+| Colosso do Eclipse Menor (chefe) | 10 dos Campos | 6   | Abissal    | 560  | 22     | 16     | 5%      | 2,2 s     | 80  | 30–50 | 30%      | 10%  |
+
+Bosque e Desfiladeiro têm 4 waves implementadas, ainda sem elite/chefe próprios.
 
 ### Balanceamento (simulação, sem equipamento, afinidade Lunar)
 

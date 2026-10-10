@@ -55,21 +55,46 @@ Escolher região ─▶ Caça automática (encontros) ─▶ XP, ouro, essência
       └── Equipar / aprimorar / enfrentar chefe ◀───────────┘
 ```
 
-- **Curto (minutos)**: ver a caça, coletar recompensas, equipar drops melhores.
+- **Curto (minutos)**: ver a caça, completar a wave (15 vitórias), coletar recompensas,
+  equipar drops melhores.
 - **Médio (horas)**: subir de nível, liberar a próxima região, aprimorar armaduras.
 - **Longo (dias)**: derrotar chefes regionais, completar conjuntos, dungeons, mercado.
 
+### 5.1 Waves: Avançar ou Farmar (Fase 2A)
+
+A caça de cada região é dividida em **waves** de 15 vitórias. O jogador escolhe, a qualquer
+momento e sem perder progresso, entre dois modos:
+
+- **Avançar** — ao concluir uma wave o herói segue sozinho para a próxima. Se o nível ainda não
+  permite a próxima, repete a atual; se perder 3 vezes seguidas, recua uma wave e passa a
+  farmar (o jogador decide quando voltar a avançar). Ao fim do conteúdo implementado, farma a
+  última wave e a interface avisa — nunca há waves além do que existe.
+- **Farmar** — repete uma wave já liberada (por exemplo, uma mais fácil para acumular itens
+  com segurança). Repetições pagam só os abates; a recompensa exclusiva de **primeira
+  conclusão** (ouro, essência e, em elites/chefes, um item raro ou épico vinculado) é paga uma
+  única vez.
+
+A cada 5 waves a 15ª vitória é contra um **elite**; a cada 10, contra o **chefe** da região.
+Derrotas não contam: o especial volta até ser vencido. Cada região guarda seu próprio
+progresso, e o progresso offline (até 8 h) atravessa quantas waves couberem.
+
+Por que híbrido: o Avançar mantém a sensação de progresso sem exigir cliques; o Farmar dá
+controle a quem quer otimizar ou está travado. O balanceamento garante que avançar renda um
+pouco mais por hora e que farmar a wave do chefe não seja o caminho ótimo (`BALANCE.md`).
+
 ## 6. Mundo e conteúdo
 
-| Região                         | Níveis | Afinidade dominante | Chefe                    | Fase    |
-| ------------------------------ | ------ | ------------------- | ------------------------ | ------- |
-| Campos do Alvorecer            | 1–6    | mista               | Colosso do Eclipse Menor | MVP     |
-| Bosque das Marés de Prata      | 6–12   | Lunar               | —                        | MVP     |
-| Desfiladeiro dos Trovões       | 12–20  | Tempestade          | —                        | MVP     |
-| Ruínas do Observatório Partido | 20–30  | Abissal             | —                        | pós-MVP |
+| Região                         | Níveis | Afinidade dominante | Waves (implementadas) | Elite (wave 5)        | Chefe (wave 10)          | Fase    |
+| ------------------------------ | ------ | ------------------- | --------------------- | --------------------- | ------------------------ | ------- |
+| Campos do Alvorecer            | 1–6    | mista               | 10                    | Lobo-Cometa Ancestral | Colosso do Eclipse Menor | MVP     |
+| Bosque das Marés de Prata      | 6–12   | Lunar               | 4 (de 10 previstas)   | —                     | —                        | MVP     |
+| Desfiladeiro dos Trovões       | 12–20  | Tempestade          | 4 (de 10 previstas)   | —                     | —                        | MVP     |
+| Ruínas do Observatório Partido | 20–30  | Abissal             | —                     | —                     | —                        | pós-MVP |
 
 Monstros dos Campos do Alvorecer (implementados): Brotolume (Solar), Lobo-Cometa (Tempestade),
-Vigia de Quartzo (Lunar) e o chefe Colosso do Eclipse Menor (Abissal).
+Vigia de Quartzo (Lunar), o elite **Lobo-Cometa Ancestral** (Tempestade — um lobo-cometa
+antigo de pelagem prateada e juba dourada, rápido e de golpes críticos) e o chefe **Colosso do
+Eclipse Menor** (Abissal — lento, resistente e de golpes pesados).
 
 **Dungeons** (pós-MVP): sequência curta de encontros com chefe, entrada limitada por dia,
 recompensas garantidas de conjunto.
@@ -104,8 +129,17 @@ Integração financeira (RMT) só após avaliação jurídica — ver `RISKS.md`
 
 ## 10. Interface
 
-- Tela principal: mapa Phaser da região (personagem caçando), barra de status, log de combate,
-  painel de recompensas pendentes.
+- Direção de arte (Fase 2B): pixel art no mundo do jogo, personagens de inspiração anime,
+  fantasia astral; interface premium com molduras douradas finas, violeta e azul profundo.
+  Detalhes em `DESIGN_SYSTEM.md`.
+- Tela principal (desktop): navegação no topo, HUD do personagem, mapa Phaser panorâmico como
+  elemento central (com placa de região/wave), cartão "Progresso da Wave" (0–15, especial,
+  próximo passo), registro de combate com filtros, espaço do chat (reservado) e painel lateral
+  com abas Caça / Atributos / Inventário / Histórico.
+- Celular: HUD compacta, mapa, progresso da wave, controles de caça e modos; regiões,
+  personagem, inventário e histórico abrem em folhas pela barra inferior.
+- Elites e chefes têm apresentação própria (aviso, aura, faixa de vida colorida); concluir uma
+  wave dispara um efeito dedicado. Tudo vem de dados confirmados pelo servidor.
 - Painéis React: personagem, inventário/equipamento, regiões, aprimoramento, configurações.
 - Mobile-first na interface; o canvas se ajusta mantendo pixels nítidos.
 - Acessibilidade: textos com contraste AA, tudo navegável por teclado, sem informação só por cor.

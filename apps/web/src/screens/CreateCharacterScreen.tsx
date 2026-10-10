@@ -106,7 +106,7 @@ export function CreateCharacterScreen({
       <header className="mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-astral-cyan/80">Olá, {username}</p>
-          <h1 className="font-display text-3xl text-astral-gold sm:text-4xl">
+          <h1 className="astral-gold-text font-display text-3xl font-bold sm:text-4xl">
             Desperte seu guerreiro
           </h1>
         </div>
@@ -116,7 +116,7 @@ export function CreateCharacterScreen({
       </header>
 
       <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[320px_1fr]" noValidate>
-        <aside className="h-fit rounded-2xl border border-white/10 bg-night-800/80 p-6 text-center lg:sticky lg:top-6">
+        <aside className="h-fit astral-frame p-6 text-center lg:sticky lg:top-6">
           <div className="mx-auto grid size-40 place-items-center rounded-2xl bg-[radial-gradient(circle_at_50%_40%,rgba(111,134,255,0.25),transparent_70%)] ring-1 ring-white/10">
             <HeroPortrait look={{ classId, appearance }} scale={8} label="Prévia do personagem" />
           </div>
@@ -147,7 +147,7 @@ export function CreateCharacterScreen({
         </aside>
 
         <div className="space-y-6">
-          <section className="rounded-2xl border border-white/10 bg-night-800/80 p-6">
+          <section className="astral-frame p-6">
             <Field
               label="Nome do personagem"
               name="characterName"
@@ -163,7 +163,7 @@ export function CreateCharacterScreen({
             />
           </section>
 
-          <section className="rounded-2xl border border-white/10 bg-night-800/80 p-6">
+          <section className="astral-frame p-6">
             <h2 className="mb-3 font-display text-lg text-astral-gold-soft">Classe</h2>
             <div className="grid gap-3 md:grid-cols-3" role="radiogroup" aria-label="Classe">
               {content?.classes.map((c) => (
@@ -186,7 +186,7 @@ export function CreateCharacterScreen({
             {fields.classId && <p className="mt-2 text-xs text-rose-300">{fields.classId}</p>}
           </section>
 
-          <section className="rounded-2xl border border-white/10 bg-night-800/80 p-6">
+          <section className="astral-frame p-6">
             <h2 className="mb-3 font-display text-lg text-astral-gold-soft">Afinidade astral</h2>
             <div
               className="grid gap-3 sm:grid-cols-2"
@@ -212,7 +212,7 @@ export function CreateCharacterScreen({
             </div>
           </section>
 
-          <section className="grid gap-5 rounded-2xl border border-white/10 bg-night-800/80 p-6 sm:grid-cols-3">
+          <section className="grid gap-5 astral-frame p-6 sm:grid-cols-3">
             <h2 className="font-display text-lg text-astral-gold-soft sm:col-span-3">Aparência</h2>
             <Swatches
               label="Cabelo"

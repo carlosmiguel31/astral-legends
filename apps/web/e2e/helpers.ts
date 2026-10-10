@@ -37,8 +37,8 @@ export async function createCharacter(page: Page, name = heroName()) {
   return name;
 }
 
-/** "26/100" → 26 */
+/** "1.026 / 1.300 (78%)" → 1026 (a HUD separa milhares com ponto). */
 export async function currentXp(page: Page): Promise<number> {
   const text = (await page.getByTestId('hud-xp').textContent()) ?? '0/0';
-  return Number(text.split('/')[0]);
+  return Number(text.split('/')[0]!.replace(/\D/g, ''));
 }

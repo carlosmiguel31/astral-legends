@@ -110,6 +110,13 @@ export function encounterView(
     levelBefore: summary.levelBefore,
     levelAfter: summary.levelAfter,
     levelUp: summary.levelUp,
+    wave: summary.wave,
+    mode: summary.mode,
+    position: summary.position,
+    kind: summary.kind,
+    waveWinsAfter: summary.waveWinsAfter,
+    waveCleared: summary.waveCleared,
+    firstClear: summary.firstClear,
     ...(summary.events ? { events: summary.events } : {}),
   };
 }
@@ -131,6 +138,13 @@ export function settlementView(row: {
   windowStart: Date;
   windowEnd: Date;
   createdAt: Date;
+  waveBefore: number | null;
+  waveAfter: number | null;
+  modeAfter: 'ADVANCE' | 'FARM' | null;
+  wavesCleared: number;
+  firstClears: number;
+  firstClearGold: bigint;
+  firstClearEssence: bigint;
 }): SettlementView {
   return {
     fromEncounter: row.fromEncounter,
@@ -150,5 +164,12 @@ export function settlementView(row: {
     windowStart: row.windowStart.toISOString(),
     windowEnd: row.windowEnd.toISOString(),
     createdAt: row.createdAt.toISOString(),
+    waveBefore: row.waveBefore,
+    waveAfter: row.waveAfter,
+    modeAfter: row.modeAfter === null ? null : row.modeAfter === 'ADVANCE' ? 'advance' : 'farm',
+    wavesCleared: row.wavesCleared,
+    firstClears: row.firstClears,
+    firstClearGold: row.firstClearGold.toString(),
+    firstClearEssence: row.firstClearEssence.toString(),
   };
 }

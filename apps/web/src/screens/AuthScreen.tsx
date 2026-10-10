@@ -2,6 +2,8 @@ import type { AccountView } from '@astral/shared';
 import { useState, type FormEvent } from 'react';
 import { Alert, Button, Field, Tabs } from '../components/ui';
 import { ApiError, api } from '../lib/api';
+import { AstralEmblem } from '../components/Logo';
+import { RegionArt } from '../components/RegionArt';
 
 type Mode = 'login' | 'register';
 
@@ -59,10 +61,24 @@ export function AuthScreen({
         <p className="text-xs uppercase tracking-[0.35em] text-astral-cyan/80">
           Idle MMORPG de fantasia astral
         </p>
-        <h1 className="font-display text-5xl text-astral-gold drop-shadow-[0_0_18px_rgba(242,196,109,0.35)] sm:text-6xl">
-          Astral Legends
-        </h1>
-        <p className="font-display text-xl italic text-astral-gold-soft/80">O Despertar</p>
+        <div className="flex items-center justify-center gap-3 lg:justify-start">
+          <AstralEmblem className="size-16 sm:size-20" />
+          <div>
+            <h1 className="astral-gold-text font-display text-4xl font-bold sm:text-5xl">
+              Astral Legends
+            </h1>
+            <p className="font-display text-sm tracking-[0.42em] text-astral-gold-soft/85">
+              ✦ O DESPERTAR ✦
+            </p>
+          </div>
+        </div>
+        <div className="astral-frame overflow-hidden p-1">
+          <RegionArt
+            regionId="campos-do-alvorecer"
+            label="Os Campos do Alvorecer à noite"
+            className="aspect-[20/9] w-full rounded-[var(--radius-control)]"
+          />
+        </div>
         <p className="mx-auto max-w-md text-sm leading-relaxed text-slate-300 lg:mx-0">
           Desperte como um guerreiro ligado às constelações, escolha sua afinidade e cace a
           corrupção do Vazio — mesmo enquanto estiver longe. Seu progresso é calculado e guardado
@@ -70,7 +86,7 @@ export function AuthScreen({
         </p>
       </section>
 
-      <section className="w-full rounded-2xl border border-white/10 bg-night-800/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8">
+      <section className="w-full astral-frame astral-frame-strong p-6 sm:p-8">
         <Tabs
           tabs={[
             { id: 'login', label: 'Entrar' },

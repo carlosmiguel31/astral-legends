@@ -34,3 +34,24 @@ describe('formatDuration', () => {
     expect(formatDuration(42_000)).toBe('42 s');
   });
 });
+
+describe('formatação da interface (Fase 2B)', () => {
+  it('formatPercent arredonda para baixo e trata máximo zero', async () => {
+    const { formatPercent } = await import('./format');
+    expect(formatPercent(162_130, 304_000)).toBe('53%');
+    expect(formatPercent(0, 100)).toBe('0%');
+    expect(formatPercent(5, 0)).toBe('100%');
+  });
+
+  it('sumMoney soma strings decimais sem ponto flutuante', async () => {
+    const { sumMoney } = await import('./format');
+    expect(sumMoney('9007199254740993', '7')).toBe('9007199254741000');
+    expect(sumMoney('0')).toBe('0');
+  });
+
+  it('formatClock usa duas casas e formatInt separa milhares', async () => {
+    const { formatClock, formatInt } = await import('./format');
+    expect(formatClock(new Date(2026, 9, 9, 4, 5, 6).getTime())).toBe('04:05:06');
+    expect(formatInt(162_130)).toBe('162.130');
+  });
+});

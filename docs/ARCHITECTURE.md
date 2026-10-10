@@ -189,7 +189,8 @@ proteção relevante para uma SPA de mesma origem.
 
 ### ADR-04 · Liquidação idle sob demanda, serializada por personagem
 
-Fluxo de `POST /v1/hunt/sync` (e de iniciar/parar/equipar, que liquidam antes de mudar):
+Fluxo de `POST /v1/hunt/sync` (e de iniciar/parar/equipar/trocar modo ou wave, que liquidam
+antes de mudar — ver ADR-08):
 
 ```
 BEGIN
@@ -242,3 +243,114 @@ latinas (evita homógrafos cirílicos/largura total) e com lista de nomes reserv
 | `@fastify/cookie` | 11.1   | cookies de sessão                       |
 | `@node-rs/argon2` | 2.2    | Argon2id (pré-compilado win32/linux)    |
 | `pg` (dev)        | 8.23   | preparação dos bancos de teste e de E2E |
+
+## 11. Fase 2A — sistema híbrido de waves
+
+### ADR-08 · Comandos aplicados numa fronteira de liquidação
+
+Trocar modo, wave, região ou equipamento muda os parâmetros do próximo encontro. Para que a
+troca nunca altere resultados já calculados nem dependa de quantas vezes o cliente consultou
+antes, todo comando segue o mesmo protocolo, dentro da transação que trava o personagem:
+
+```
+BEGIN
+  SELECT … FROM characters … FOR UPDATE
+  settleHunt(... até agora ...)              -- 1. liquida todos os encontros terminados
+  applyWaveSettings(região, progresso, pedido, nível)   -- 2. regra pura do game-core
+  UPDATE region_progress … WHERE version = $v
+  UPDATE hunt_sessions SET last_settled_at = agora … WHERE version = $v   -- 3. fronteira
+  INSERT hunt_commands (comando, at_encounter, from_state, to_state, applied_at, request_id)
+COMMIT
+```
+
+- **Fronteira lógica e temporal**: o encontro em andamento (iniciado, não terminado) é
+  descartado e o próximo começa exatamente no instante do comando, já com os novos parâmetros.
+  O índice do próximo encontro (`encounters_resolved`) **não muda**: ninguém "pula" um sorteio.
+- **Sem efeito retroativo**: liquidações passadas são imutáveis (trigger); o comando só afeta
+  encontros que começam depois dele.
+- **Equivalência**: os mesmos comandos nos mesmos instantes produzem o mesmo estado,
+  independentemente de quantas liquidações intermediárias houve (teste de integração com dois
+  personagens, mesma semente: um consulta só nos comandos, o outro dezenas de vezes).
+- **Duas abas**: a trava serializa; cada `hunt_commands.from_state` é exatamente o `to_state`
+  do comando anterior (testado com 12 requisições simultâneas de 4 abas). Pedido igual ao
+  estado atual não escreve nada (idempotente).
+- **Auditoria**: `hunt_commands` é append-only (trigger bloqueia UPDATE/TRUNCATE) e guarda o
+  estado antes/depois, o encontro de aplicação e o `request_id` da requisição HTTP. Comandos:
+  `start`, `stop`, `settings` (modo/wave) e `equipment` (slot e item antes/depois) — com eles e a
+  semente é possível reconstruir qualquer caçada.
+- **Relógio**: o instante do comando é o relógio da instância da API. Com uma única instância
+  (cenário da VPS atual) isso é exato; ao escalar horizontalmente, usar o relógio do banco
+  (`SELECT now()` com a trava) para que instâncias com relógios diferentes não enfraqueçam a
+  fronteira.
+- **Sem reroll**: a semente nunca sai do servidor, então o cliente não sabe o resultado de um
+  encontro antes de ele ser liquidado. Trocar o modo não altera o resultado do encontro (o
+  modo só decide o que acontece **depois** de concluir a wave). Trocar a wave muda o monstro
+  do próximo encontro, mas com o mesmo índice e sem ver o resultado antes — e o único "custo"
+  de alternar repetidamente é perder o tempo do encontro em andamento.
+
+### ADR-09 · Progresso por região e primeira conclusão única
+
+- `region_progress` (PK personagem + região) guarda modo, wave, contagem de vitórias/derrotas,
+  sequência de falhas, totais da wave, maior wave concluída, aviso e `version`. Cada região é
+  independente; trocar de região retoma o progresso salvo dela.
+- O motor (`settleHunt`) recebe e devolve esse estado: a liquidação de várias horas atravessa
+  quantas waves couberem, com o mesmo resultado de várias liquidações menores.
+- **Primeira conclusão** paga uma vez por (personagem, região, wave), com quatro barreiras:
+  regra do motor (`wave > highestCleared`), chave de idempotência
+  `waveclear:<personagem>:<região>:<wave>:<moeda>` no livro-razão, `source_ref` único do item
+  e índice único parcial `wave_clears (character_id, region_id, wave) WHERE first_clear`.
+- Itens de primeira conclusão são entregues mesmo com o inventário cheio (no máximo um por
+  wave de elite/chefe) e não são negociáveis. Eles ocupam vaga: drops e itens de wave são
+  processados na ordem dos encontros com um único contador de vagas, para que liquidar de uma
+  vez ou em partes guarde exatamente os mesmos itens (testado com inventário pequeno).
+- Descartar um item também liquida antes: a vaga liberada só vale para encontros que terminam
+  depois do descarte (antes, descartar e só então sincronizar salvaria drops que já teriam sido
+  perdidos — corrigido nesta fase, com teste).
+- Caçadas migradas (Farmar wave 1, `highestCleared = 0`) recebem a recompensa de primeira
+  conclusão da wave 1 ao completar 15 vitórias, como qualquer jogador: é intencional. Os
+  resultados dos encontros continuam idênticos aos da Fase 1.
+- **Compatibilidade**: caçadas ativas antes da migração não têm `region_progress`; a migração
+  cria a linha como Farmar wave 1 (`LEGACY_WAVE_PROGRESS`), que reproduz exatamente o motor da
+  Fase 1 (teste de regressão no game-core e de integração na API). Caçadas novas começam em
+  Avançar wave 1. `RULESET_VERSION` passou para 3.
+
+### ADR-10 · A cena mostra, o servidor decide (waves)
+
+A cena só desenha encontros confirmados: elite e chefe chegam marcados pelo servidor
+(`kind`), com destaque (aura, faixa, aviso, câmera), e o efeito "Wave N concluída!" dispara no
+encontro que o servidor marcou com `waveCleared`. Sem encontros na fila e com a caçada ativa,
+o herói patrulha a trilha ("procurando…") — nenhum monstro é inventado. O painel React mostra
+o estado persistido (pode estar alguns segundos à frente da animação); o aviso de conclusão
+espera a animação do encontro correspondente terminar.
+
+## 12. Fase 2B — interface
+
+### ADR-11 · Layout por breakpoint sem recriar o Phaser
+
+O layout muda em 1024 px (`useIsDesktop`): duas colunas no desktop, coluna única com barra
+inferior e folhas no celular. Cada controle (iniciar/parar, modos, seleção de wave) é montado
+**uma única vez**, no lugar do layout atual — esconder com CSS duplicaria botões e `data-testid`.
+O palco ocupa a mesma posição na árvore do React nos dois layouts, então girar o tablet não
+recria a instância Phaser. Mesmo que ela seja recriada (ex.: desmontagem), o `HuntDirector`
+guarda o último herói, região e estado da caçada e os reaplica quando a nova cena se registra.
+
+### ADR-12 · Palco panorâmico com ENVELOP
+
+O mundo passou de 320×180 para 400×180 (20:9) e o Phaser usa `Scale.ENVELOP`: o canvas preenche
+o contêiner e o excedente é recortado. Em 1920 px o contêiner é 14:5 (recorta um pouco do céu
+e do primeiro plano); no celular é 16:9 (recorta as laterais). A trilha do combate, os
+personagens e os letreiros ficam sempre na área visível. Assim o mapa domina a tela sem
+empurrar o progresso da wave para fora dela em 1366×768 ou 1920×1080.
+
+### ADR-13 · Arte provisória procedural e compartilhada
+
+`game/backdrop.ts` desenha cada região em pixel art determinística (mesma região → mesmo
+cenário). A cena Phaser usa como textura e a interface reutiliza nas miniaturas
+(`RegionArt`), sem arquivos de imagem e sem dependências. Os cenários são provisórios e estão
+identificados como tal; a Fase 2C substitui por arte desenhada à mão.
+
+### Novas dependências (verificadas em 2026-10-09)
+
+| Pacote               | Versão | Uso                                                                |
+| -------------------- | ------ | ------------------------------------------------------------------ |
+| `@fontsource/cinzel` | 5.3    | fonte de títulos (OFL-1.1), auto-hospedada — sem chamadas externas |

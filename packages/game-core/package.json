@@ -18,9 +18,11 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sim:waves": "tsx scripts/balance.ts"
   },
   "devDependencies": {
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "tsx": "^4.23.15"
   }
 }

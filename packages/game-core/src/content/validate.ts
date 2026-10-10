@@ -2,6 +2,7 @@ import { assertNonNegativeInt } from '../imath.js';
 import { ITEMS, STARTER_WEAPON } from './items.js';
 import { MONSTERS } from './monsters.js';
 import { REGIONS } from './regions.js';
+import { WAVE_RULES, waveKind } from './waves.js';
 
 /**
  * Valida a integridade do conteúdo estático. Executado nos testes e na
@@ -48,7 +49,9 @@ export function validateContent(): void {
     for (const spawn of region.spawns) {
       const monster = MONSTERS[spawn.monsterId];
       if (!monster) throw new Error(`${region.id}: monstro inexistente ${spawn.monsterId}`);
-      if (monster.isBoss) throw new Error(`${region.id}: chefe não pode ser spawn comum`);
+      if (monster.isBoss || monster.isElite) {
+        throw new Error(`${region.id}: chefe/elite não pode ser spawn comum`);
+      }
       assertNonNegativeInt(spawn.weight, `${region.id}.${spawn.monsterId}.weight`);
       if (spawn.weight === 0) throw new Error(`${region.id}: peso zero para ${spawn.monsterId}`);
     }
@@ -64,6 +67,28 @@ export function validateContent(): void {
       const boss = MONSTERS[region.bossId];
       if (!boss) throw new Error(`${region.id}: chefe inexistente ${region.bossId}`);
       if (!boss.isBoss) throw new Error(`${region.id}: ${region.bossId} não é chefe`);
+    }
+    const { count, eliteId, rewardTier } = region.waves;
+    assertNonNegativeInt(count, `${region.id}.waves.count`);
+    assertNonNegativeInt(rewardTier, `${region.id}.waves.rewardTier`);
+    if (count < 1) throw new Error(`${region.id}: região sem waves`);
+    if (rewardTier < 1) throw new Error(`${region.id}: rewardTier deve ser ≥ 1`);
+    if (eliteId !== null) {
+      const elite = MONSTERS[eliteId];
+      if (!elite?.isElite) throw new Error(`${region.id}: elite inexistente ${eliteId}`);
+    }
+    // Nenhuma wave pode exigir conteúdo que não existe.
+    for (let wave = 1; wave <= count; wave += 1) {
+      const kind = waveKind(wave);
+      if (kind === 'elite' && eliteId === null) {
+        throw new Error(`${region.id}: wave ${wave} exige um elite não implementado`);
+      }
+      if (kind === 'boss' && region.bossId === null) {
+        throw new Error(`${region.id}: wave ${wave} exige um chefe não implementado`);
+      }
+    }
+    if (count > WAVE_RULES.designWavesPerRegion) {
+      throw new Error(`${region.id}: mais waves que o previsto no desenho`);
     }
   }
 }

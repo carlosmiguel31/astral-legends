@@ -1,14 +1,29 @@
+# Dependências
 node_modules/
-dist/
-coverage/
-*.tsbuildinfo
+
+# Variáveis de ambiente
 .env
 .env.*
 !.env.example
-apps/api/src/generated/
-playwright-report/
-test-results/
+
+# Builds e arquivos gerados
+dist/
+build/
+coverage/
 .vite/
+*.tsbuildinfo
+
+# Testes
+test-results/
+playwright-report/
+
+# Logs
 *.log
+
+# Sistema operacional
 .DS_Store
 Thumbs.db
+
+# Backups e bancos locais
+*.dump
+*.sql.gz

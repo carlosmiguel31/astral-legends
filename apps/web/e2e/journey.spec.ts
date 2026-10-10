@@ -14,7 +14,7 @@ test.describe('jornada principal', () => {
 
     // Estado inicial definido pelo servidor.
     await expect(page.getByTestId('hud-level')).toHaveText('Nv 1');
-    await expect(page.getByTestId('hud-xp')).toHaveText('0/100');
+    await expect(page.getByTestId('hud-xp')).toHaveText('0 / 100 (0%)');
     await expect(page.getByTestId('hud-gold')).toHaveText('0');
     await expect(page.getByTestId('hud-status')).toContainText('Descansando');
     await expect(page.getByTestId('game-canvas').locator('canvas')).toHaveCount(1);

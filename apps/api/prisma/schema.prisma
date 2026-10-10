@@ -119,6 +119,9 @@ model Character {
   items       ItemInstance[]
   hunt        HuntSession?
   settlements HuntSettlement[]
+  regions     RegionProgress[]
+  waveClears  WaveClear[]
+  commands    HuntCommand[]
 
   @@map("characters")
 }
@@ -142,6 +145,7 @@ enum LedgerReason {
   ADMIN_GRANT
   ADMIN_REVOKE
   DEV_SEED
+  WAVE_FIRST_CLEAR
 }
 
 /// Saldo atual (projeção do livro-razão). Alterado somente pelo serviço de ledger.
@@ -224,6 +228,7 @@ enum ItemSource {
   CRAFT
   QUEST
   ADMIN
+  WAVE_REWARD
 }
 
 /// Instância única de item. A definição estática (nome, slot, visual) vive em game-core (defId).
@@ -310,11 +315,116 @@ model HuntSettlement {
   rulesetVersion Int      @map("ruleset_version")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
+  // Fase 2A — waves (nulos em liquidações anteriores às waves).
+  waveBefore        Int?      @map("wave_before")
+  waveAfter         Int?      @map("wave_after")
+  modeAfter         HuntMode? @map("mode_after")
+  wavesCleared      Int       @default(0) @map("waves_cleared")
+  firstClears       Int       @default(0) @map("first_clears")
+  firstClearGold    BigInt    @default(0) @map("first_clear_gold")
+  firstClearEssence BigInt    @default(0) @map("first_clear_essence")
+  /// Conclusões e recuos ocorridos nesta liquidação (resumo).
+  waveEvents        Json      @default("[]") @map("wave_events")
+
   character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@unique([runId, fromEncounter])
   @@index([characterId, createdAt])
   @@map("hunt_settlements")
+}
+
+// ───────────────────────────── Waves (Fase 2A) ─────────────────────────────
+
+enum HuntMode {
+  ADVANCE
+  FARM
+}
+
+/// Progresso de waves de um personagem em uma região. Independente por região:
+/// trocar de região e voltar retoma a wave, o modo e as vitórias já obtidas.
+model RegionProgress {
+  characterId    String   @map("character_id") @db.Uuid
+  regionId       String   @map("region_id") @db.VarChar(64)
+  mode           HuntMode @default(ADVANCE)
+  wave           Int      @default(1)
+  /// Vitórias na tentativa atual da wave (0 .. vitórias por wave − 1).
+  waveWins       Int      @default(0) @map("wave_wins")
+  waveLosses     Int      @default(0) @map("wave_losses")
+  failStreak     Int      @default(0) @map("fail_streak")
+  /// Recompensas acumuladas na tentativa atual (resumo exibido na conclusão).
+  waveXp         Int      @default(0) @map("wave_xp")
+  waveGold       BigInt   @default(0) @map("wave_gold")
+  waveEssence    BigInt   @default(0) @map("wave_essence")
+  waveItems      Int      @default(0) @map("wave_items")
+  /// Maior wave já concluída (0 = nenhuma). Só cresce.
+  highestCleared Int      @default(0) @map("highest_cleared")
+  totalClears    Int      @default(0) @map("total_clears")
+  /// Aviso de mudança automática (recuo, limite de conteúdo, nível insuficiente).
+  notice         Json?
+  version        Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, regionId])
+  @@map("region_progress")
+}
+
+/// Registro imutável de cada conclusão de wave. `(run_id, encounter_index)` é único
+/// (a mesma conclusão não pode ser registrada duas vezes) e um índice parcial garante
+/// uma única primeira conclusão por personagem, região e wave.
+model WaveClear {
+  id                BigInt   @id @default(autoincrement())
+  characterId       String   @map("character_id") @db.Uuid
+  regionId          String   @map("region_id") @db.VarChar(64)
+  runId             String   @map("run_id") @db.Uuid
+  wave              Int
+  kind              String   @db.VarChar(8)
+  mode              HuntMode
+  encounterIndex    Int      @map("encounter_index")
+  firstClear        Boolean  @map("first_clear")
+  wins              Int
+  losses            Int
+  xp                Int
+  gold              BigInt
+  essence           BigInt
+  items             Int
+  firstClearGold    BigInt   @default(0) @map("first_clear_gold")
+  firstClearEssence BigInt   @default(0) @map("first_clear_essence")
+  firstClearItemDef String?  @map("first_clear_item_def") @db.VarChar(64)
+  firstClearRarity  Rarity?  @map("first_clear_rarity")
+  nextMode          HuntMode @map("next_mode")
+  nextWave          Int      @map("next_wave")
+  nextReason        String   @map("next_reason") @db.VarChar(16)
+  clearedAt         DateTime @map("cleared_at") @db.Timestamptz(3)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, encounterIndex])
+  @@index([characterId, regionId, clearedAt])
+  @@map("wave_clears")
+}
+
+/// Comandos do jogador sobre a caçada (auditoria e reprodução). Imutável.
+/// `at_encounter` + `applied_at` formam a fronteira lógica e temporal do comando.
+model HuntCommand {
+  id          BigInt   @id @default(autoincrement())
+  characterId String   @map("character_id") @db.Uuid
+  regionId    String   @map("region_id") @db.VarChar(64)
+  runId       String?  @map("run_id") @db.Uuid
+  command     String   @db.VarChar(16)
+  atEncounter Int?     @map("at_encounter")
+  fromState   Json?    @map("from_state")
+  toState     Json     @map("to_state")
+  appliedAt   DateTime @map("applied_at") @db.Timestamptz(3)
+  requestId   String?  @map("request_id") @db.VarChar(64)
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId, appliedAt])
+  @@map("hunt_commands")
 }
 
 // ───────────────────────────── Auditoria ─────────────────────────────

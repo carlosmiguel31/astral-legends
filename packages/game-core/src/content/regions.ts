@@ -13,7 +13,18 @@ export interface RegionDefinition {
   spawns: ReadonlyArray<{ monsterId: string; weight: number }>;
   /** Itens que podem cair na região e seus pesos. */
   loot: ReadonlyArray<{ itemId: string; weight: number }>;
+  /** Chefe da região (último encontro das waves de chefe). */
   bossId: string | null;
+  /**
+   * Waves implementadas. `count` é o limite real de conteúdo: o jogador nunca avança
+   * além dele. Waves de elite/chefe só podem existir se o elite/chefe existir.
+   */
+  waves: {
+    count: number;
+    eliteId: string | null;
+    /** Multiplicador inteiro das recompensas de primeira conclusão. */
+    rewardTier: number;
+  };
 }
 
 const LIST: RegionDefinition[] = [
@@ -40,6 +51,7 @@ const LIST: RegionDefinition[] = [
       { itemId: 'botas-de-viajante', weight: 16 },
     ],
     bossId: 'colosso-do-eclipse-menor',
+    waves: { count: 10, eliteId: 'lobo-cometa-ancestral', rewardTier: 1 },
   },
   {
     id: 'bosque-das-mares-de-prata',
@@ -64,6 +76,8 @@ const LIST: RegionDefinition[] = [
       { itemId: 'sandalias-de-espuma', weight: 16 },
     ],
     bossId: null,
+    // Sem elite/chefe implementados ainda: limitado às 4 waves anteriores ao primeiro elite.
+    waves: { count: 4, eliteId: null, rewardTier: 2 },
   },
   {
     id: 'desfiladeiro-dos-trovoes',
@@ -88,6 +102,7 @@ const LIST: RegionDefinition[] = [
       { itemId: 'botas-de-relampago', weight: 16 },
     ],
     bossId: null,
+    waves: { count: 4, eliteId: null, rewardTier: 3 },
   },
 ];
 

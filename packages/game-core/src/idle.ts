@@ -1,25 +1,43 @@
 /**
- * Liquidação determinística da caça idle.
+ * Liquidação determinística da caça idle, com waves (Fase 2A).
  *
  * Uma caça é uma sequência infinita de encontros numerados (0, 1, 2, …). O resultado do
- * encontro `n` depende apenas de: semente da caça, `n`, região e estado do personagem
- * naquele momento (nível e equipamento). Por isso liquidar 1 vez ou 100 vezes o mesmo
- * intervalo produz exatamente o mesmo resultado — a frequência das consultas não importa.
+ * encontro `n` depende apenas de: semente da caça, `n`, região, estado da wave antes do
+ * encontro (wave e posição) e estado do personagem (nível e equipamento). O estado da wave
+ * é, por sua vez, consequência determinística dos encontros anteriores. Por isso liquidar
+ * 1 vez ou 100 vezes o mesmo intervalo produz exatamente o mesmo resultado.
  *
  * Linha do tempo de um encontro:  [procura] → [combate] → [recuperação]
  * Um encontro só é resolvido quando termina inteiramente antes de `nowMs`; o tempo de
  * um encontro em andamento fica para a próxima liquidação.
+ *
+ * Waves: cada wave exige `WAVE_RULES.winsPerWave` vitórias. Em waves de elite/chefe o
+ * último encontro (a 15ª vitória) é o especial. Derrotas não contam.
+ *  - Avançar: ao concluir, segue para a próxima wave (respeitando nível e conteúdo).
+ *  - Farmar: ao concluir, repete a mesma wave.
+ * Recompensas de primeira conclusão só existem quando a wave supera `highestCleared`.
  */
 
 import { MONSTERS, type MonsterDefinition } from './content/monsters.js';
 import { REGIONS, isRegionUnlocked, type RegionDefinition } from './content/regions.js';
+import {
+  WAVE_RULES,
+  encounterKind,
+  firstClearCurrency,
+  firstClearItemRarity,
+  scaledMonster,
+  waveCount,
+  waveMinLevel,
+  type HuntMode,
+  type WaveKind,
+} from './content/waves.js';
 import { simulateCombat, type AttackEvent } from './combat.js';
 import { assertNonNegativeInt, assertSafeInt } from './imath.js';
 import { pickWeighted, rollItemBonuses, rollRarity, type ItemDrop } from './loot.js';
 import { applyXp, xpForKill } from './progression.js';
 import { createRng, deriveSeed } from './rng.js';
-import { computeCombatStats, type EquippedItem } from './stats.js';
-import type { AffinityId, ClassId, CombatStats } from './types.js';
+import { computeCombatStats, type EquippedItem, type ItemBonuses } from './stats.js';
+import type { AffinityId, ClassId, CombatStats, Rarity } from './types.js';
 
 /** Teto de progresso acumulado sem liquidar (8 h). */
 export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1_000;
@@ -40,7 +58,7 @@ export const MAX_ENCOUNTERS_PER_SETTLEMENT = 20_000;
 export const RECENT_ENCOUNTERS = 20;
 
 /** Sub-sementes independentes por encontro. Mudar estes valores invalida replays. */
-const STREAM = { spawn: 0, combat: 1, rewards: 2 } as const;
+const STREAM = { spawn: 0, combat: 1, rewards: 2, firstClear: 3 } as const;
 
 export interface HuntCharacter {
   classId: ClassId;
@@ -50,6 +68,59 @@ export interface HuntCharacter {
   xp: number;
   equipment: readonly EquippedItem[];
 }
+
+/** Aviso persistido para o jogador sobre uma mudança automática de wave. */
+export type WaveNotice =
+  | { type: 'retreat'; fromWave: number; toWave: number }
+  | { type: 'content_limit'; wave: number }
+  | { type: 'level_gate'; wave: number; nextWave: number; minLevel: number };
+
+/** Estado da wave de uma região para um personagem. Inteiros em todos os campos. */
+export interface WaveProgress {
+  mode: HuntMode;
+  wave: number;
+  /** Vitórias já obtidas na wave atual (0 .. winsPerWave-1). */
+  wins: number;
+  /** Encontros não vencidos na wave atual. */
+  losses: number;
+  /** Falhas consecutivas (derrota ou fuga) — base do recuo automático no modo Avançar. */
+  failStreak: number;
+  /** Recompensas acumuladas na tentativa atual da wave (para o resumo de conclusão). */
+  xp: number;
+  gold: number;
+  essence: number;
+  items: number;
+  /** Maior wave já concluída nesta região (0 = nenhuma). */
+  highestCleared: number;
+  notice: WaveNotice | null;
+}
+
+export function initialWaveProgress(
+  mode: HuntMode,
+  wave: number,
+  highestCleared: number,
+  notice: WaveNotice | null = null,
+): WaveProgress {
+  return {
+    mode,
+    wave,
+    wins: 0,
+    losses: 0,
+    failStreak: 0,
+    xp: 0,
+    gold: 0,
+    essence: 0,
+    items: 0,
+    highestCleared,
+    notice,
+  };
+}
+
+/**
+ * Sem estado de wave informado, a liquidação usa "Farmar wave 1": mesmos monstros e
+ * recompensas da Fase 1. Isso mantém válidas as caçadas iniciadas antes das waves.
+ */
+export const LEGACY_WAVE_PROGRESS: WaveProgress = initialWaveProgress('farm', 1, 0);
 
 export interface SettleHuntInput {
   regionId: string;
@@ -61,6 +132,8 @@ export interface SettleHuntInput {
   lastSettledAtMs: number;
   nowMs: number;
   character: HuntCharacter;
+  /** Estado da wave antes do primeiro encontro desta liquidação. */
+  progress?: WaveProgress;
   /** Quantos dos encontros mais recentes devem trazer os golpes individuais. */
   includeEventsForLast?: number;
   offlineCapMs?: number;
@@ -90,8 +163,58 @@ export interface EncounterSummary {
   levelBefore: number;
   levelAfter: number;
   levelUp: boolean;
+  /** Wave, modo e posição (1 = primeira vitória) no início do encontro. */
+  wave: number;
+  mode: HuntMode;
+  position: number;
+  kind: WaveKind;
+  /** Vitórias na wave depois do encontro (0 quando a wave foi concluída). */
+  waveWinsAfter: number;
+  waveCleared: boolean;
+  firstClear: boolean;
   events?: AttackEvent[];
 }
+
+export interface FirstClearItem {
+  wave: number;
+  defId: string;
+  rarity: Rarity;
+  bonuses: ItemBonuses;
+}
+
+export interface WaveClearEvent {
+  type: 'clear';
+  wave: number;
+  kind: WaveKind;
+  mode: HuntMode;
+  encounterIndex: number;
+  atMs: number;
+  firstClear: boolean;
+  totals: {
+    wins: number;
+    losses: number;
+    xp: number;
+    gold: number;
+    essence: number;
+    items: number;
+  };
+  firstClearReward: { gold: number; essence: number; item: FirstClearItem | null } | null;
+  next: {
+    mode: HuntMode;
+    wave: number;
+    reason: 'advance' | 'repeat' | 'level_gate' | 'content_limit';
+  };
+}
+
+export interface WaveRetreatEvent {
+  type: 'retreat';
+  fromWave: number;
+  toWave: number;
+  encounterIndex: number;
+  atMs: number;
+}
+
+export type WaveEvent = WaveClearEvent | WaveRetreatEvent;
 
 export interface SettleHuntResult {
   fromEncounter: number;
@@ -112,9 +235,20 @@ export interface SettleHuntResult {
   xp: number;
   xpGained: number;
   xpDiscarded: number;
+  /** Ouro e essência dos monstros derrotados. */
   gold: number;
   essence: number;
   drops: ItemDrop[];
+  /** Estado da wave antes e depois da liquidação. */
+  progressBefore: WaveProgress;
+  progress: WaveProgress;
+  waveEvents: WaveEvent[];
+  wavesCleared: number;
+  /** Recompensas exclusivas de primeira conclusão (separadas das recompensas normais). */
+  firstClears: number;
+  firstClearGold: number;
+  firstClearEssence: number;
+  firstClearItems: FirstClearItem[];
   recent: EncounterSummary[];
 }
 
@@ -131,10 +265,32 @@ function getRegion(regionId: string): RegionDefinition {
   return region;
 }
 
-function getMonster(monsterId: string): MonsterDefinition {
-  const monster = MONSTERS[monsterId];
+function getMonster(monsterId: string | null): MonsterDefinition {
+  const monster = monsterId ? MONSTERS[monsterId] : undefined;
   if (!monster) throw new Error(`monstro inexistente: ${monsterId}`);
   return monster;
+}
+
+export function validateWaveProgress(region: RegionDefinition, p: WaveProgress): void {
+  for (const key of [
+    'wave',
+    'wins',
+    'losses',
+    'failStreak',
+    'xp',
+    'gold',
+    'essence',
+    'items',
+    'highestCleared',
+  ] as const) {
+    assertNonNegativeInt(p[key], `progress.${key}`);
+  }
+  if (p.mode !== 'advance' && p.mode !== 'farm') throw new RangeError('modo inválido');
+  if (p.wave < 1 || p.wave > waveCount(region))
+    throw new RangeError(`wave fora do conteúdo: ${p.wave}`);
+  if (p.wins >= WAVE_RULES.winsPerWave) throw new RangeError('vitórias na wave acima do limite');
+  if (p.highestCleared > waveCount(region))
+    throw new RangeError('highestCleared acima do conteúdo');
 }
 
 interface ResolvedEncounter {
@@ -142,8 +298,8 @@ interface ResolvedEncounter {
 }
 
 /**
- * Resolve um único encontro. Função pura: mesmo `n`, semente, região e personagem
- * produzem sempre o mesmo resultado.
+ * Resolve um único encontro. Função pura: mesmo `n`, semente, região, wave/posição e
+ * personagem produzem sempre o mesmo resultado.
  */
 export function resolveEncounter(params: {
   region: RegionDefinition;
@@ -153,11 +309,23 @@ export function resolveEncounter(params: {
   stats: CombatStats;
   character: HuntCharacter;
   recordEvents: boolean;
+  /** Contexto da wave (padrão: wave 1, primeira posição, modo farmar). */
+  wave?: number;
+  position?: number;
+  mode?: HuntMode;
 }): ResolvedEncounter {
   const { region, seed, index, startedAtMs, stats, character } = params;
+  const wave = params.wave ?? 1;
+  const position = params.position ?? 1;
+  const kind = encounterKind(wave, position - 1);
 
-  const spawnRng = createRng(deriveSeed(seed, index, STREAM.spawn));
-  const monster = getMonster(pickWeighted(region.spawns, spawnRng).monsterId);
+  let monster: MonsterDefinition;
+  if (kind === 'boss') monster = getMonster(region.bossId);
+  else if (kind === 'elite') monster = getMonster(region.waves.eliteId);
+  else {
+    const spawnRng = createRng(deriveSeed(seed, index, STREAM.spawn));
+    monster = scaledMonster(getMonster(pickWeighted(region.spawns, spawnRng).monsterId), wave);
+  }
 
   const combat = simulateCombat({
     player: { stats, affinity: character.affinity },
@@ -221,9 +389,34 @@ export function resolveEncounter(params: {
     levelBefore: character.level,
     levelAfter: character.level,
     levelUp: false,
+    wave,
+    mode: params.mode ?? 'farm',
+    position,
+    kind,
+    waveWinsAfter: position - 1 + (outcome === 'win' ? 1 : 0),
+    waveCleared: false,
+    firstClear: false,
   };
   if (combat.events) summary.events = combat.events;
   return { summary };
+}
+
+/** Recompensa de primeira conclusão. Usa um fluxo de RNG próprio do encontro que concluiu. */
+function firstClearReward(
+  region: RegionDefinition,
+  wave: number,
+  seed: number,
+  index: number,
+): NonNullable<WaveClearEvent['firstClearReward']> {
+  const { gold, essence } = firstClearCurrency(region, wave);
+  const rarity = firstClearItemRarity(wave);
+  let item: FirstClearItem | null = null;
+  if (rarity && region.loot.length > 0) {
+    const rng = createRng(deriveSeed(seed, index, STREAM.firstClear));
+    const defId = pickWeighted(region.loot, rng).itemId;
+    item = { wave, defId, rarity, bonuses: rollItemBonuses(defId, rarity, rng) };
+  }
+  return { gold, essence, item };
 }
 
 /**
@@ -241,6 +434,10 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
   const levelBefore = input.character.level;
   if (!isRegionUnlocked(region, levelBefore))
     throw new RegionLockedError(region.id, region.minLevel);
+
+  const progressBefore: WaveProgress = { ...(input.progress ?? LEGACY_WAVE_PROGRESS) };
+  validateWaveProgress(region, progressBefore);
+  const progress: WaveProgress = { ...progressBefore };
 
   // Teto offline: o que passar de `capMs` é descartado.
   const windowStartMs = Math.max(input.lastSettledAtMs, input.nowMs - capMs);
@@ -260,6 +457,12 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
   let essence = 0;
   const drops: ItemDrop[] = [];
   const recent: EncounterSummary[] = [];
+  const waveEvents: WaveEvent[] = [];
+  let wavesCleared = 0;
+  let firstClears = 0;
+  let firstClearGold = 0;
+  let firstClearEssence = 0;
+  const firstClearItems: FirstClearItem[] = [];
 
   for (let i = 0; i < MAX_ENCOUNTERS_PER_SETTLEMENT; i += 1) {
     const { summary } = resolveEncounter({
@@ -270,6 +473,9 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
       stats,
       character,
       recordEvents: false,
+      wave: progress.wave,
+      position: progress.wins + 1,
+      mode: progress.mode,
     });
     if (summary.endedAtMs > input.nowMs) break;
 
@@ -277,9 +483,11 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
     else if (summary.outcome === 'loss') losses += 1;
     else timeouts += 1;
 
+    let xpThisEncounter = 0;
     if (summary.xp > 0) {
       const gained = applyXp({ level: character.level, xp: character.xp }, summary.xp);
-      xpGained += summary.xp - gained.xpDiscarded;
+      xpThisEncounter = summary.xp - gained.xpDiscarded;
+      xpGained += xpThisEncounter;
       xpDiscarded += gained.xpDiscarded;
       if (gained.levelsGained > 0) {
         summary.levelUp = true;
@@ -292,6 +500,106 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
     gold += summary.gold;
     essence += summary.essence;
     if (summary.drop) drops.push(summary.drop);
+
+    // ── Progresso da wave ──────────────────────────────────────────────────
+    progress.xp += xpThisEncounter;
+    progress.gold += summary.gold;
+    progress.essence += summary.essence;
+    if (summary.drop) progress.items += 1;
+
+    if (summary.outcome === 'win') {
+      progress.wins += 1;
+      progress.failStreak = 0;
+    } else {
+      progress.losses += 1;
+      progress.failStreak += 1;
+    }
+
+    if (progress.wins === WAVE_RULES.winsPerWave) {
+      const wave = progress.wave;
+      const firstClear = wave > progress.highestCleared;
+      const reward = firstClear ? firstClearReward(region, wave, input.seed, index) : null;
+      if (firstClear) {
+        progress.highestCleared = wave;
+        firstClears += 1;
+        firstClearGold += reward!.gold;
+        firstClearEssence += reward!.essence;
+        if (reward!.item) firstClearItems.push(reward!.item);
+      }
+
+      let next: WaveClearEvent['next'];
+      let notice: WaveNotice | null = null;
+      if (progress.mode === 'farm') {
+        next = { mode: 'farm', wave, reason: 'repeat' };
+      } else if (wave >= waveCount(region)) {
+        next = { mode: 'farm', wave, reason: 'content_limit' };
+        notice = { type: 'content_limit', wave };
+      } else if (character.level < waveMinLevel(region, wave + 1)) {
+        next = { mode: 'advance', wave, reason: 'level_gate' };
+        notice = {
+          type: 'level_gate',
+          wave,
+          nextWave: wave + 1,
+          minLevel: waveMinLevel(region, wave + 1),
+        };
+      } else {
+        next = { mode: 'advance', wave: wave + 1, reason: 'advance' };
+      }
+
+      waveEvents.push({
+        type: 'clear',
+        wave,
+        kind: summary.kind,
+        mode: progress.mode,
+        encounterIndex: index,
+        atMs: summary.endedAtMs,
+        firstClear,
+        totals: {
+          wins: progress.wins,
+          losses: progress.losses,
+          xp: progress.xp,
+          gold: progress.gold,
+          essence: progress.essence,
+          items: progress.items,
+        },
+        firstClearReward: reward,
+        next,
+      });
+      wavesCleared += 1;
+      summary.waveCleared = true;
+      summary.firstClear = firstClear;
+      summary.waveWinsAfter = 0;
+      // Um avanço bem-sucedido apaga avisos antigos; repetir em Farmar mantém o atual.
+      const keptNotice = next.reason === 'repeat' ? progress.notice : null;
+      Object.assign(
+        progress,
+        initialWaveProgress(next.mode, next.wave, progress.highestCleared, notice ?? keptNotice),
+      );
+    } else if (
+      progress.mode === 'advance' &&
+      progress.failStreak >= WAVE_RULES.retreatAfterFailures &&
+      progress.wave > 1
+    ) {
+      // Recuo automático: falhas seguidas no modo Avançar levam a farmar a wave anterior
+      // (sempre já concluída). O jogador decide quando tentar avançar de novo.
+      const fromWave = progress.wave;
+      const toWave = fromWave - 1;
+      waveEvents.push({
+        type: 'retreat',
+        fromWave,
+        toWave,
+        encounterIndex: index,
+        atMs: summary.endedAtMs,
+      });
+      Object.assign(
+        progress,
+        initialWaveProgress('farm', toWave, progress.highestCleared, {
+          type: 'retreat',
+          fromWave,
+          toWave,
+        }),
+      );
+    }
 
     recent.push(summary);
     if (recent.length > RECENT_ENCOUNTERS) recent.shift();
@@ -314,6 +622,9 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
         stats: computeCombatStats(atStart),
         character: atStart,
         recordEvents: true,
+        wave: original.wave,
+        position: original.position,
+        mode: original.mode,
       });
       if (summary.events) original.events = summary.events;
     }
@@ -337,6 +648,14 @@ export function settleHunt(input: SettleHuntInput): SettleHuntResult {
     gold,
     essence,
     drops,
+    progressBefore,
+    progress,
+    waveEvents,
+    wavesCleared,
+    firstClears,
+    firstClearGold,
+    firstClearEssence,
+    firstClearItems,
     recent,
   };
 }

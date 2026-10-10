@@ -38,7 +38,7 @@ export function GameCanvas({
   }, [director]);
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-night-950 ring-1 ring-white/10">
+    <div className="relative aspect-video w-full sm:aspect-[20/9] 2xl:aspect-[14/5] overflow-hidden rounded-[var(--radius-control)] bg-night-950">
       <div ref={hostRef} data-testid="game-canvas" className="absolute inset-0 [&>canvas]:block" />
       {children}
       {failed && (

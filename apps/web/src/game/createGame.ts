@@ -12,7 +12,9 @@ export function createGame(parent: HTMLElement, director: HuntDirector): Phaser.
     pixelArt: true,
     backgroundColor: '#0b0d1f',
     scale: {
-      mode: Phaser.Scale.FIT,
+      // ENVELOP preenche o contêiner; em telas largas o palco fica mais panorâmico
+      // e o excedente (céu e primeiro plano) é recortado, nunca a trilha do combate.
+      mode: Phaser.Scale.ENVELOP,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     banner: false,

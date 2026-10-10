@@ -8,7 +8,15 @@ import {
   REGIONS,
   REGION_ORDER,
   RULESET_VERSION,
+  WAVE_RULES,
   computeCombatStats,
+  firstClearCurrency,
+  firstClearItemRarity,
+  waveCount,
+  waveKind,
+  waveMinLevel,
+  waveRewardBp,
+  waveStatBp,
   type MonsterDefinition,
   type RegionDefinition,
 } from '@astral/game-core';
@@ -17,6 +25,39 @@ import type { FastifyInstance } from 'fastify';
 
 function range(values: number[]): [number, number] {
   return [Math.min(...values), Math.max(...values)];
+}
+
+function special(id: string | null) {
+  if (!id) return null;
+  const def = MONSTERS[id]!;
+  return {
+    id: def.id,
+    name: def.name,
+    description: def.description,
+    level: def.level,
+    affinity: def.affinity,
+  };
+}
+
+function regionWaves(region: RegionDefinition): RegionInfo['waves'] {
+  const count = waveCount(region);
+  return {
+    count,
+    winsPerWave: WAVE_RULES.winsPerWave,
+    elite: special(region.waves.eliteId),
+    boss: count >= WAVE_RULES.bossEvery ? special(region.bossId) : null,
+    list: Array.from({ length: count }, (_, i) => {
+      const wave = i + 1;
+      return {
+        wave,
+        kind: waveKind(wave),
+        minLevel: waveMinLevel(region, wave),
+        statBp: waveStatBp(wave),
+        rewardBp: waveRewardBp(wave),
+        firstClear: { ...firstClearCurrency(region, wave), itemRarity: firstClearItemRarity(wave) },
+      };
+    }),
+  };
 }
 
 function regionInfo(region: RegionDefinition): RegionInfo {
@@ -57,6 +98,7 @@ function regionInfo(region: RegionDefinition): RegionInfo {
       const item = ITEMS[l.itemId]!;
       return { id: item.id, name: item.name, slot: item.slot };
     }),
+    waves: regionWaves(region),
   };
 }
 

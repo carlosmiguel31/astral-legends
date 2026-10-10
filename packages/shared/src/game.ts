@@ -102,6 +102,79 @@ export const itemViewSchema = z.object({
 });
 export type ItemView = z.infer<typeof itemViewSchema>;
 
+// ───────────────────────────── Waves ─────────────────────────────
+
+export const huntModeSchema = z.enum(['advance', 'farm'], { error: 'Modo inválido' });
+export type HuntModeView = z.infer<typeof huntModeSchema>;
+export const waveKindSchema = z.enum(['normal', 'elite', 'boss']);
+
+export const waveNoticeSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('retreat'), fromWave: z.number().int(), toWave: z.number().int() }),
+  z.object({ type: z.literal('content_limit'), wave: z.number().int() }),
+  z.object({
+    type: z.literal('level_gate'),
+    wave: z.number().int(),
+    nextWave: z.number().int(),
+    minLevel: z.number().int(),
+  }),
+]);
+export type WaveNoticeView = z.infer<typeof waveNoticeSchema>;
+
+/** Progresso de waves de uma região (sempre calculado pelo servidor). */
+export const regionProgressViewSchema = z.object({
+  regionId: z.string(),
+  mode: huntModeSchema,
+  wave: z.number().int(),
+  waveKind: waveKindSchema,
+  /** Tipo do próximo encontro (o especial só aparece na última posição). */
+  nextEncounterKind: waveKindSchema,
+  waveWins: z.number().int(),
+  waveLosses: z.number().int(),
+  failStreak: z.number().int(),
+  totals: z.object({
+    xp: z.number().int(),
+    gold: moneySchema,
+    essence: moneySchema,
+    items: z.number().int(),
+  }),
+  highestCleared: z.number().int(),
+  unlockedWave: z.number().int(),
+  maxSelectableWave: z.number().int(),
+  waveCount: z.number().int(),
+  totalClears: z.number().int(),
+  notice: waveNoticeSchema.nullable(),
+});
+export type RegionProgressView = z.infer<typeof regionProgressViewSchema>;
+
+export const waveClearViewSchema = z.object({
+  regionId: z.string(),
+  wave: z.number().int(),
+  kind: waveKindSchema,
+  mode: huntModeSchema,
+  encounterIndex: z.number().int(),
+  firstClear: z.boolean(),
+  wins: z.number().int(),
+  losses: z.number().int(),
+  xp: z.number().int(),
+  gold: moneySchema,
+  essence: moneySchema,
+  items: z.number().int(),
+  firstClearReward: z
+    .object({
+      gold: moneySchema,
+      essence: moneySchema,
+      item: z.object({ defId: z.string(), name: z.string(), rarity: raritySchema }).nullable(),
+    })
+    .nullable(),
+  next: z.object({
+    mode: huntModeSchema,
+    wave: z.number().int(),
+    reason: z.enum(['advance', 'repeat', 'level_gate', 'content_limit']),
+  }),
+  clearedAt: z.string(),
+});
+export type WaveClearView = z.infer<typeof waveClearViewSchema>;
+
 export const huntViewSchema = z.object({
   status: z.enum(['ACTIVE', 'STOPPED']),
   regionId: z.string(),
@@ -133,14 +206,43 @@ export const gameStateSchema = z.object({
   hunt: huntViewSchema.nullable(),
   equipment: z.array(itemViewSchema),
   inventory: z.object({ count: z.number().int(), capacity: z.number().int() }),
+  waves: z.object({
+    winsPerWave: z.number().int(),
+    /** Uma entrada por região, na ordem de progressão. */
+    regions: z.array(regionProgressViewSchema),
+    /** Conclusão de wave mais recente (para o resumo e o feedback). */
+    lastClear: waveClearViewSchema.nullable(),
+  }),
 });
 export type GameState = z.infer<typeof gameStateSchema>;
 
 // ───────────────────────────── Caça ─────────────────────────────
 
+const regionIdSchema = z.string({ error: 'Informe a região' }).min(1).max(64);
+const waveNumberSchema = z
+  .number({ error: 'Informe a wave' })
+  .int('Wave inválida')
+  .min(1, 'Wave inválida')
+  .max(1_000, 'Wave inválida');
+
 export const startHuntRequestSchema = z.strictObject({
-  regionId: z.string({ error: 'Informe a região' }).min(1).max(64),
+  regionId: regionIdSchema,
+  mode: huntModeSchema.optional(),
+  wave: waveNumberSchema.optional(),
 });
+
+/** Troca de modo e/ou wave. Validada e aplicada pelo servidor numa fronteira definida. */
+export const huntSettingsRequestSchema = z
+  .strictObject({
+    regionId: regionIdSchema,
+    mode: huntModeSchema.optional(),
+    wave: waveNumberSchema.optional(),
+  })
+  .refine((v) => v.mode !== undefined || v.wave !== undefined, {
+    message: 'Informe o modo ou a wave',
+    path: ['mode'],
+  });
+export type HuntSettingsRequest = z.infer<typeof huntSettingsRequestSchema>;
 
 const attackEventSchema = z.object({
   atMs: z.number().int(),
@@ -174,6 +276,14 @@ export const encounterViewSchema = z.object({
   levelBefore: z.number().int(),
   levelAfter: z.number().int(),
   levelUp: z.boolean(),
+  // Fase 2A: ausentes em encontros registrados antes das waves.
+  wave: z.number().int().optional(),
+  mode: huntModeSchema.optional(),
+  position: z.number().int().optional(),
+  kind: waveKindSchema.optional(),
+  waveWinsAfter: z.number().int().optional(),
+  waveCleared: z.boolean().optional(),
+  firstClear: z.boolean().optional(),
   events: z.array(attackEventSchema).optional(),
 });
 export type EncounterView = z.infer<typeof encounterViewSchema>;
@@ -196,6 +306,13 @@ export const settlementViewSchema = z.object({
   windowStart: z.string(),
   windowEnd: z.string(),
   createdAt: z.string(),
+  waveBefore: z.number().int().nullable(),
+  waveAfter: z.number().int().nullable(),
+  modeAfter: huntModeSchema.nullable(),
+  wavesCleared: z.number().int(),
+  firstClears: z.number().int(),
+  firstClearGold: moneySchema,
+  firstClearEssence: moneySchema,
 });
 export type SettlementView = z.infer<typeof settlementViewSchema>;
 
@@ -205,12 +322,15 @@ export const syncResponseSchema = z.object({
   settlement: settlementViewSchema.nullable(),
   /** Encontros mais recentes da caçada atual (de qualquer liquidação), em ordem. */
   recentEncounters: z.array(encounterViewSchema),
+  /** Waves concluídas nesta requisição (feedback imediato). */
+  waveClears: z.array(waveClearViewSchema),
 });
 export type SyncResponse = z.infer<typeof syncResponseSchema>;
 
 export const huntHistoryResponseSchema = z.object({
   settlements: z.array(settlementViewSchema.extend({ regionId: z.string() })),
   recentEncounters: z.array(encounterViewSchema),
+  waveClears: z.array(waveClearViewSchema),
 });
 export type HuntHistoryResponse = z.infer<typeof huntHistoryResponseSchema>;
 

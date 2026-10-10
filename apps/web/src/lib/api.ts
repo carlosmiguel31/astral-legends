@@ -13,6 +13,7 @@ import {
   type GameState,
   type HealthReady,
   type HuntHistoryResponse,
+  type HuntSettingsRequest,
   type InventoryResponse,
   type SyncResponse,
 } from '@astral/shared';
@@ -139,6 +140,9 @@ export const api = {
   sync: (): Promise<SyncResponse> => request('POST', '/v1/hunt/sync', syncResponseSchema),
   startHunt: (regionId: string): Promise<SyncResponse> =>
     request('POST', '/v1/hunt/start', syncResponseSchema, { regionId }),
+  /** Troca de modo e/ou wave; o servidor valida e aplica numa fronteira definida. */
+  huntSettings: (input: HuntSettingsRequest): Promise<SyncResponse> =>
+    request('POST', '/v1/hunt/settings', syncResponseSchema, input),
   stopHunt: (): Promise<SyncResponse> => request('POST', '/v1/hunt/stop', syncResponseSchema),
   history: (): Promise<HuntHistoryResponse> =>
     request('GET', '/v1/hunt/history', huntHistoryResponseSchema),

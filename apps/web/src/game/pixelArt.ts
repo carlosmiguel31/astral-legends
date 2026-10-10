@@ -277,6 +277,14 @@ export const MONSTER_LOOKS: Readonly<Record<string, MonsterLook>> = {
     },
     scale: 1,
   },
+  // Elite dos Campos: o mesmo porte do lobo-cometa, com pelagem prateada e juba dourada.
+  'lobo-cometa-ancestral': {
+    sprite: {
+      rows: BEAST,
+      palette: { k: '#120f24', b: '#8a93c9', B: '#e9ecff', e: '#c084fc', t: '#f2c46d' },
+    },
+    scale: 1.45,
+  },
   'vigia-de-quartzo': {
     sprite: { rows: GOLEM, palette: { k: '#2a2440', C: '#e8e2ff', c: '#a99bd6', e: '#7fe3ff' } },
     scale: 1,

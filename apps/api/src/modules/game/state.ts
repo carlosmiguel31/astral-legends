@@ -2,6 +2,7 @@ import {
   MAX_LEVEL,
   OFFLINE_CAP_MS,
   RULESET_VERSION,
+  WAVE_RULES,
   deriveBuild,
   xpToNextLevel,
 } from '@astral/game-core';
@@ -9,6 +10,7 @@ import { appearanceSchema, type Appearance, type GameState } from '@astral/share
 import type { AppConfig } from '../../config/env.js';
 import { notFound } from '../../http/errors.js';
 import type { Character, Prisma, PrismaClient } from '../../generated/prisma/client.js';
+import { regionProgressViews, waveClearView } from '../hunt/waves.js';
 import { itemView, toEquipped } from './views.js';
 
 export type Db = PrismaClient | Prisma.TransactionClient;
@@ -50,7 +52,7 @@ export async function loadGameState(
   const character = await db.character.findUnique({ where: { accountId } });
   if (!character) throw characterNotFound();
 
-  const [equippedRows, inventoryCount, balances, hunt] = await Promise.all([
+  const [equippedRows, inventoryCount, balances, hunt, regions, lastClear] = await Promise.all([
     db.itemInstance.findMany({
       where: { ownerCharacterId: character.id, equippedSlot: { not: null } },
       orderBy: { equippedSlot: 'asc' },
@@ -58,6 +60,8 @@ export async function loadGameState(
     db.itemInstance.count({ where: { ownerCharacterId: character.id, equippedSlot: null } }),
     db.walletBalance.findMany({ where: { accountId } }),
     db.huntSession.findUnique({ where: { characterId: character.id } }),
+    regionProgressViews(db, character.id, character.level),
+    db.waveClear.findFirst({ where: { characterId: character.id }, orderBy: { id: 'desc' } }),
   ]);
 
   const build = deriveBuild({
@@ -99,5 +103,10 @@ export async function loadGameState(
       : null,
     equipment: equippedRows.map((row) => itemView(row, character.classId, character.level)),
     inventory: { count: inventoryCount, capacity: config.INVENTORY_CAPACITY },
+    waves: {
+      winsPerWave: WAVE_RULES.winsPerWave,
+      regions,
+      lastClear: lastClear ? waveClearView(lastClear) : null,
+    },
   };
 }

@@ -3,7 +3,13 @@ import type { ItemView } from '@astral/shared';
 import type { AppConfig } from '../../config/env.js';
 import { AppError, notFound } from '../../http/errors.js';
 import type { Character, Prisma, PrismaClient } from '../../generated/prisma/client.js';
-import { settleActiveHunt, type SettleOutcome } from '../hunt/service.js';
+import {
+  applyCommandBoundary,
+  recordCommand,
+  settleActiveHunt,
+  type CommandContext,
+  type SettleOutcome,
+} from '../hunt/service.js';
 import { itemDefOrThrow, itemView } from '../game/views.js';
 
 type Tx = Prisma.TransactionClient;
@@ -34,6 +40,32 @@ async function ownedItem(tx: Tx, character: Character, itemId: string) {
 }
 
 /**
+ * Fronteira de comando para mudanças de equipamento (ADR-08): o encontro em andamento
+ * recomeça agora, já com o novo equipamento, e a troca fica registrada em `hunt_commands`.
+ */
+async function equipmentBoundary(
+  tx: Tx,
+  characterId: string,
+  slot: string,
+  from: string | null,
+  to: string | null,
+  ctx: CommandContext,
+): Promise<void> {
+  const hunt = await applyCommandBoundary(tx, characterId, ctx.now);
+  if (!hunt) return;
+  await recordCommand(tx, {
+    characterId,
+    regionId: hunt.regionId,
+    runId: hunt.runId,
+    command: 'equipment',
+    atEncounter: hunt.atEncounter,
+    from: { slot, itemId: from },
+    to: { slot, itemId: to },
+    ctx,
+  });
+}
+
+/**
  * Equipa um item no slot da sua definição, trocando o que estiver lá.
  * A caçada é liquidada antes: encontros passados usam o equipamento antigo.
  */
@@ -42,9 +74,9 @@ export async function equipItem(
   character: Character,
   itemId: string,
   config: AppConfig,
-  now: Date,
+  ctx: CommandContext,
 ): Promise<{ settle: SettleOutcome | null; changed: boolean }> {
-  const settle = await settleActiveHunt(tx, character, config, now);
+  const settle = await settleActiveHunt(tx, character, config, ctx.now);
   const fresh = await tx.character.findUniqueOrThrow({ where: { id: character.id } });
   const item = await ownedItem(tx, fresh, itemId);
   const def = itemDefOrThrow(item.defId);
@@ -59,6 +91,10 @@ export async function equipItem(
   }
   if (item.equippedSlot === def.slot) return { settle, changed: false };
 
+  const previous = await tx.itemInstance.findFirst({
+    where: { ownerCharacterId: fresh.id, equippedSlot: def.slot },
+    select: { id: true },
+  });
   await tx.itemInstance.updateMany({
     where: { ownerCharacterId: fresh.id, equippedSlot: def.slot },
     data: { equippedSlot: null, version: { increment: 1 } },
@@ -69,6 +105,7 @@ export async function equipItem(
   });
   if (updated.count !== 1)
     throw new AppError(409, 'ITEM_CONFLICT', 'O item foi alterado; tente novamente');
+  await equipmentBoundary(tx, fresh.id, def.slot, previous?.id ?? null, item.id, ctx);
   return { settle, changed: true };
 }
 
@@ -77,11 +114,12 @@ export async function unequipItem(
   character: Character,
   itemId: string,
   config: AppConfig,
-  now: Date,
+  ctx: CommandContext,
 ): Promise<{ settle: SettleOutcome | null; changed: boolean }> {
-  const settle = await settleActiveHunt(tx, character, config, now);
+  const settle = await settleActiveHunt(tx, character, config, ctx.now);
   const item = await ownedItem(tx, character, itemId);
   if (item.equippedSlot === null) return { settle, changed: false };
+  const slot = item.equippedSlot;
 
   const unequippedCount = await tx.itemInstance.count({
     where: { ownerCharacterId: character.id, equippedSlot: null },
@@ -89,10 +127,13 @@ export async function unequipItem(
   if (unequippedCount >= config.INVENTORY_CAPACITY) {
     throw new AppError(409, 'INVENTORY_FULL', 'Inventário cheio: descarte algum item primeiro');
   }
-  await tx.itemInstance.updateMany({
+  const updated = await tx.itemInstance.updateMany({
     where: { id: item.id, ownerCharacterId: character.id, version: item.version },
     data: { equippedSlot: null, version: { increment: 1 } },
   });
+  if (updated.count !== 1)
+    throw new AppError(409, 'ITEM_CONFLICT', 'O item foi alterado; tente novamente');
+  await equipmentBoundary(tx, character.id, slot, item.id, null, ctx);
   return { settle, changed: true };
 }
 
@@ -101,8 +142,13 @@ export async function discardItem(
   tx: Tx,
   character: Character,
   itemId: string,
-  requestId: string,
-): Promise<void> {
+  config: AppConfig,
+  ctx: CommandContext,
+): Promise<{ settle: SettleOutcome | null }> {
+  // Liquida antes: a vaga liberada só vale para drops de encontros que terminarem depois.
+  // Sem isso, descartar antes de sincronizar salvaria drops que um jogador que consulta
+  // com frequência já teria perdido (resultado dependente da frequência de consulta).
+  const settle = await settleActiveHunt(tx, character, config, ctx.now);
   const item = await ownedItem(tx, character, itemId);
   if (item.equippedSlot !== null) {
     throw new AppError(409, 'ITEM_EQUIPPED', 'Desequipe o item antes de descartá-lo');
@@ -121,7 +167,8 @@ export async function discardItem(
         source: item.source,
         sourceRef: item.sourceRef,
       },
-      requestId,
+      requestId: ctx.requestId ?? null,
     },
   });
+  return { settle };
 }

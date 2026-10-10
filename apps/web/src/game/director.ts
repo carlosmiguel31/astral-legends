@@ -6,6 +6,8 @@ export interface HuntSceneApi {
   setHero(look: HeroLook, maxHp: number): void;
   setRegion(regionId: string): void;
   enqueue(encounters: EncounterView[]): void;
+  /** Caçada ativa: sem encontros na fila, o herói patrulha em vez de ficar parado. */
+  setHunting(active: boolean): void;
 }
 
 /** Eventos que a cena devolve à interface (sempre derivados de dados do servidor). */
@@ -24,6 +26,8 @@ export class HuntDirector {
   private currentHooks: HuntSceneHooks = {};
   private scene: HuntSceneApi | null = null;
   private pending: Array<(scene: HuntSceneApi) => void> = [];
+  /** Último estado conhecido: reaplicado se o canvas for recriado (ex.: troca de layout). */
+  private last: { hero?: [HeroLook, number]; region?: string; hunting?: boolean } = {};
 
   get hooks(): HuntSceneHooks {
     return this.currentHooks;
@@ -35,6 +39,10 @@ export class HuntDirector {
 
   attach(scene: HuntSceneApi): void {
     this.scene = scene;
+    if (this.last.region) scene.setRegion(this.last.region);
+    if (this.last.hunting !== undefined) scene.setHunting(this.last.hunting);
+    if (this.last.hero) scene.setHero(...this.last.hero);
+    // Encontros recebidos antes de a cena existir (repetir setHero/setRegion é inofensivo).
     const pending = this.pending;
     this.pending = [];
     for (const command of pending) command(scene);
@@ -50,14 +58,21 @@ export class HuntDirector {
   }
 
   setHero(look: HeroLook, maxHp: number): void {
+    this.last.hero = [look, maxHp];
     this.run((s) => s.setHero(look, maxHp));
   }
 
   setRegion(regionId: string): void {
+    this.last.region = regionId;
     this.run((s) => s.setRegion(regionId));
   }
 
   enqueue(encounters: EncounterView[]): void {
     if (encounters.length > 0) this.run((s) => s.enqueue(encounters));
+  }
+
+  setHunting(active: boolean): void {
+    this.last.hunting = active;
+    this.run((s) => s.setHunting(active));
   }
 }

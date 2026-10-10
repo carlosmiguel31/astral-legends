@@ -1,4 +1,11 @@
-import type { EncounterView, GameState, SettlementView, SyncResponse } from '@astral/shared';
+import type {
+  EncounterView,
+  GameState,
+  HuntSettingsRequest,
+  SettlementView,
+  SyncResponse,
+  WaveClearView,
+} from '@astral/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import type { HuntDirector } from './director';
@@ -7,6 +14,8 @@ import type { HuntDirector } from './director';
 const SYNC_EVERY_MS = 4_000;
 /** Liquidações maiores que isto no carregamento viram um resumo "enquanto você esteve fora". */
 const OFFLINE_SUMMARY_MIN_ENCOUNTERS = 5;
+/** Tempo que o aviso de wave concluída fica na tela. */
+const WAVE_FEEDBACK_MS = 9_000;
 
 export interface GameController {
   state: GameState | null;
@@ -21,7 +30,11 @@ export interface GameController {
   busy: string | null;
   heroHp: { hp: number; max: number } | null;
   inventoryVersion: number;
+  /** Wave concluída mais recente, exibida quando a animação do encontro termina. */
+  waveFeedback: WaveClearView | null;
+  dismissWaveFeedback(): void;
   sync(): Promise<void>;
+  huntSettings(input: HuntSettingsRequest): Promise<void>;
   startHunt(regionId: string): Promise<void>;
   stopHunt(): Promise<void>;
   equip(itemId: string): Promise<void>;
@@ -43,6 +56,9 @@ export function useGame(director: HuntDirector, onSessionLost: () => void): Game
   const [busy, setBusy] = useState<string | null>(null);
   const [heroHp, setHeroHp] = useState<{ hp: number; max: number } | null>(null);
   const [inventoryVersion, setInventoryVersion] = useState(0);
+  const [waveFeedback, setWaveFeedback] = useState<WaveClearView | null>(null);
+  /** Conclusões aguardando a cena terminar o encontro correspondente (por índice). */
+  const pendingClears = useRef(new Map<string, WaveClearView>());
 
   const lastQueued = useRef<{ runId: string; index: number } | null>(null);
   const firstSync = useRef(true);
@@ -55,12 +71,19 @@ export function useGame(director: HuntDirector, onSessionLost: () => void): Game
   useEffect(() => {
     director.setHooks({
       onHeroHp: (hp, max) => setHeroHp({ hp, max }),
-      onEncounterShown: (e) =>
+      onEncounterShown: (e) => {
         setPending((p) => {
           const next = new Set(p);
           next.delete(`${e.runId}:${e.index}`);
           return next;
-        }),
+        });
+        const key = `${e.runId}:${e.index}`;
+        const clear = pendingClears.current.get(key);
+        if (clear) {
+          pendingClears.current.delete(key);
+          setWaveFeedback(clear);
+        }
+      },
     });
     return () => director.setHooks({});
   }, [director]);
@@ -100,7 +123,20 @@ export function useGame(director: HuntDirector, onSessionLost: () => void): Game
       ) {
         setOfflineSummary(res.settlement);
       }
+      const wasFirst = firstSync.current;
       firstSync.current = false;
+      // Conclusões de wave: no primeiro carregamento entram no resumo offline; depois,
+      // aparecem quando a cena termina o encontro que concluiu a wave.
+      if (!wasFirst && runId) {
+        const playing = new Set(toPlay.map((e) => e.index));
+        let immediate: WaveClearView | null = null;
+        for (const c of res.waveClears) {
+          if (playing.has(c.encounterIndex))
+            pendingClears.current.set(`${runId}:${c.encounterIndex}`, c);
+          else immediate = c;
+        }
+        if (immediate) setWaveFeedback(immediate);
+      }
       if (runId && fresh.length > 0) lastQueued.current = { runId, index: fresh.at(-1)!.index };
       if (toPlay.length > 0) {
         setPending((p) => {
@@ -165,6 +201,14 @@ export function useGame(director: HuntDirector, onSessionLost: () => void): Game
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `look` resume as dependências relevantes
   }, [look, director]);
+  useEffect(() => {
+    director.setHunting(hunting);
+  }, [hunting, director]);
+  useEffect(() => {
+    if (!waveFeedback) return;
+    const timer = window.setTimeout(() => setWaveFeedback(null), WAVE_FEEDBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [waveFeedback]);
   const regionId = state?.hunt?.regionId ?? (state ? 'campos-do-alvorecer' : null);
   useEffect(() => {
     if (regionId) director.setRegion(regionId);
@@ -200,7 +244,10 @@ export function useGame(director: HuntDirector, onSessionLost: () => void): Game
     busy,
     heroHp,
     inventoryVersion,
+    waveFeedback,
+    dismissWaveFeedback: () => setWaveFeedback(null),
     sync,
+    huntSettings: (input) => action('settings', () => api.huntSettings(input)),
     startHunt: (regionId) => action(`start:${regionId}`, () => api.startHunt(regionId)),
     stopHunt: () => action('stop', () => api.stopHunt()),
     equip: (id) =>

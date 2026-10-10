@@ -1,4 +1,4 @@
-import { OFFLINE_CAP_MS, settleHunt } from '@astral/game-core';
+import { OFFLINE_CAP_MS, initialWaveProgress, settleHunt } from '@astral/game-core';
 import { syncResponseSchema, wsServerMessageSchema, type WsServerMessage } from '@astral/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadGameState, lockCharacter } from '../../src/modules/game/state.js';
@@ -106,7 +106,9 @@ describe('liquidação', () => {
     expect(BigInt(s.gold)).toBeGreaterThan(0n);
     expect(s.levelAfter).toBeGreaterThan(s.levelBefore);
     expect(body.state.character.level).toBe(s.levelAfter);
-    expect(body.state.wallet.gold).toBe(s.gold);
+    // Fase 2A: o saldo inclui as recompensas de primeira conclusão das waves.
+    expect(BigInt(s.firstClearGold)).toBeGreaterThan(0n);
+    expect(body.state.wallet.gold).toBe(String(BigInt(s.gold) + BigInt(s.firstClearGold)));
     expect(body.state.hunt?.encountersResolved).toBe(s.toEncounter);
 
     // Encontros recentes para o cliente animar: os últimos trazem os golpes.
@@ -118,7 +120,7 @@ describe('liquidação', () => {
       where: { accountId: user.accountId, currency: 'GOLD' },
       _sum: { delta: true },
     });
-    expect(sum._sum.delta).toBe(BigInt(s.gold));
+    expect(sum._sum.delta).toBe(BigInt(s.gold) + BigInt(s.firstClearGold));
   });
 
   it('o resultado bate com o game-core para a mesma semente e janela', async () => {
@@ -136,11 +138,16 @@ describe('liquidação', () => {
       // O servidor liquidou até algum instante ≥ fim do último encontro; reproduzimos até ele.
       nowMs: persisted.lastSettledAt.getTime(),
       character: { classId: 'arcanist', affinity: 'lunar', level: 1, xp: 0, equipment: [] },
+      // Fase 2A: caçadas novas começam no modo Avançar, wave 1.
+      progress: initialWaveProgress('advance', 1, 0),
     });
     expect(body.settlement!.toEncounter).toBe(expected.nextEncounter);
     expect(body.state.character.level).toBe(expected.level);
     expect(body.state.character.xp).toBe(expected.xp);
     expect(body.settlement!.gold).toBe(String(expected.gold));
+    expect(body.settlement!.firstClearGold).toBe(String(expected.firstClearGold));
+    expect(body.settlement!.waveAfter).toBe(expected.progress.wave);
+    expect(body.settlement!.wavesCleared).toBe(expected.wavesCleared);
   });
 
   it('consultar de novo não gera recompensas duplicadas', async () => {
@@ -171,12 +178,13 @@ describe('liquidação', () => {
     // As janelas são contíguas e sem sobreposição.
     for (let i = 1; i < rows.length; i += 1)
       expect(rows[i]!.fromEncounter).toBe(rows[i - 1]!.toEncounter);
-    const totalGold = rows.reduce((sum, r) => sum + r.gold, 0n);
+    const totalGold = rows.reduce((sum, r) => sum + r.gold + r.firstClearGold, 0n);
     expect(await goldOf(user.accountId)).toBe(totalGold);
     const ledgerCount = await ctx.prisma.ledgerEntry.count({
       where: { accountId: user.accountId },
     });
-    expect(ledgerCount).toBeLessThanOrEqual(rows.length * 2);
+    const firstClears = rows.reduce((sum, r) => sum + r.firstClears, 0);
+    expect(ledgerCount).toBeLessThanOrEqual(rows.length * 2 + firstClears * 2);
   });
 
   it('respeita o limite de 8 horas offline', async () => {
@@ -244,12 +252,24 @@ describe('liquidação', () => {
       const res = await user.browser.post('/v1/hunt/sync');
       const s = syncResponseSchema.parse(res.json()).settlement!;
       expect(s.itemsDropped).toBeGreaterThan(9);
-      const items = await small.prisma.itemInstance.findMany({
+      const all = await small.prisma.itemInstance.findMany({
         where: { ownerCharacterId: state.character.id, equippedSlot: null },
       });
-      expect(items).toHaveLength(10); // capacidade
-      expect(s.itemsDiscarded).toBe(s.itemsDropped - 9); // 1 vaga já ocupada pela arma inicial
-      const refs = items.filter((i) => i.source === 'DROP').map((i) => i.sourceRef);
+      // Recompensas exclusivas de primeira conclusão nunca se perdem, mesmo acima da capacidade.
+      const waveRewards = all.filter((i) => i.source === 'WAVE_REWARD');
+      const clears = await small.prisma.waveClear.count({
+        where: { characterId: state.character.id, firstClearItemDef: { not: null } },
+      });
+      expect(waveRewards).toHaveLength(clears);
+      expect(clears).toBeGreaterThan(0);
+      // Fase 2A: os itens de wave também ocupam vaga. O inventário fica na capacidade (ou
+      // acima só pelos itens de wave entregues quando ele já estava cheio).
+      expect(all.length).toBeGreaterThanOrEqual(10);
+      expect(all.length).toBeLessThanOrEqual(10 + waveRewards.length);
+      const items = all.filter((i) => i.source === 'DROP');
+      expect(s.itemsDiscarded).toBe(s.itemsDropped - items.length);
+      expect(items.length).toBeLessThanOrEqual(9); // 1 vaga já ocupada pela arma inicial
+      const refs = items.map((i) => i.sourceRef);
       expect(new Set(refs).size).toBe(refs.length);
     } finally {
       await small.close();

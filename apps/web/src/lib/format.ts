@@ -39,3 +39,27 @@ export function formatDuration(ms: number): string {
   if (totalMinutes > 0) return `${totalMinutes} min`;
   return `${Math.max(0, Math.floor(ms / 1000))} s`;
 }
+
+/** Hora local de um instante (epoch ms) → "14:28:31". */
+export function formatClock(ms: number): string {
+  const d = new Date(ms);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((n) => String(n).padStart(2, '0'))
+    .join(':');
+}
+
+/** Percentual inteiro (arredondado para baixo) de `value` em `max`. */
+export function formatPercent(value: number, max: number): string {
+  if (max <= 0) return '100%';
+  return `${Math.floor((Math.max(0, value) * 100) / max)}%`;
+}
+
+/** Soma de valores monetários decimais (string) sem perder precisão. */
+export function sumMoney(...values: string[]): string {
+  return values.reduce((sum, v) => sum + BigInt(/^\d+$/.test(v) ? v : '0'), 0n).toString();
+}
+
+/** Número inteiro com separador de milhar ("162130" → "162.130"). */
+export function formatInt(value: number): string {
+  return formatMoney(String(Math.trunc(value)));
+}

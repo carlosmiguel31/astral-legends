@@ -58,7 +58,7 @@ export class Browser {
   readonly ip: string;
 
   constructor(
-    private readonly app: FastifyInstance,
+    readonly app: FastifyInstance,
     ip?: string,
   ) {
     ipCounter += 1;
